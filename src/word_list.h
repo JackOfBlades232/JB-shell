@@ -2,6 +2,8 @@
 #ifndef WORD_LIST_SENTRY
 #define WORD_LIST_SENTRY
 
+#include "word.h"
+
 struct word_item;
 struct word_list;
 
