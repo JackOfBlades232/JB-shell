@@ -1,4 +1,4 @@
-SRCMODULES = word.c word_list.c line_tokenization.c
+SRCMODULES = src/word.c src/word_list.c src/line_tokenization.c
 OBJMODULES = $(SRCMODULES:.c=.o)
 CC = gcc
 CFLAGS = -g -Wall
