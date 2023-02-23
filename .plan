@@ -5,5 +5,5 @@ Shell-I:
     * Add " processing and errors on imbalance (still req spaces)
     * Write main dialogue cycle
     * Bug: weird characters after first iter
-- Add \ as screening symbol for " and for itself (4_37)
+* Add \ as screening symbol for " and for itself (4_37)
 - Add empty word impl (4_38)
