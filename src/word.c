@@ -46,6 +46,7 @@ struct word *word_add_char(struct word *w, char c)
         resize_word(w);
 
     w->content[w_len] = c;
+    w->content[w_len+1] = '\0';
     return w;
 }
 
