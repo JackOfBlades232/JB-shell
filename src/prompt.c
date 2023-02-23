@@ -17,7 +17,8 @@ int run_command_prompt()
         if (token_res == 0) {
             word_list_print(words);
             word_list_free(words);
-        }
+        } else
+            fprintf(stderr, "Invalid command\n");
     }
 
     putchar('\n');

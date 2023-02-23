@@ -42,10 +42,12 @@ static void process_spec_char(struct line_traverse_state *state,
         struct word_list *words)
 {
     if (state->cur_c == '"') {
-        if (!state->in_word && state->mode == in_quotes)
-            word_list_add_item(words);
-
         switch_traverse_mode(state);
+
+        if (!state->in_word && state->mode == in_quotes) {
+            word_list_add_item(words);
+            state->in_word = 1;
+        }
     } else if (state->cur_c == '\\')
         state->ignore_spec = 1;
 }
@@ -77,7 +79,7 @@ int tokenize_input_line_to_word_list(FILE *f,
         }
     }
 
-    if (state.mode != regular)
+    if (state.mode != regular || state.ignore_spec)
         status = 1;
 
     if (status == 0)
