@@ -7,6 +7,6 @@
 #include <stdio.h>
 
 int tokenize_input_line_to_word_list(FILE *f, 
-        struct word_list *out_words, int *eol_char);
+        struct word_list **out_words, int *eol_char);
 
 #endif

@@ -1,7 +1,7 @@
 Shell-I:
 - Implement line parsing and word reading (4_36)
     * Create word-list struct and methods for it (try blind typedef)
-    - Write line-parsing func (read line, return allocated list), or err&clean
+    * Write line-parsing func (read line, return allocated list), or err&clean
     - Add " processing and errors on imbalance (still req spaces)
     - Write main dialogue cycle
 - Add \ as screening symbol for " and for itself (4_37)

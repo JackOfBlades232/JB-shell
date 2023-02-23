@@ -51,7 +51,7 @@ struct word *word_add_char(struct word *w, char c)
 
 int word_put(FILE *f, struct word *w)
 {
-    return fputs(w->content, f);
+    return fprintf(f, "[%s]\n", w->content);
 }
 
 void word_free(struct word *w)

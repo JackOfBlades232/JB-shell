@@ -25,16 +25,27 @@ static int word_list_is_empty(struct word_list *lst)
     return lst->first == NULL && lst->last == NULL;
 }
 
-void word_list_add_item(struct word_list *lst, struct word *wrd)
+void word_list_add_item(struct word_list *lst)
 {
     struct word_item *tmp = malloc(sizeof(struct word_item));
-    tmp->wrd = wrd;
+    tmp->wrd = word_create();
     tmp->next = NULL;
 
     if (word_list_is_empty(lst))
         lst->last = lst->first = tmp;
-    else
+    else {
         lst->last->next = tmp;
+        lst->last = tmp;
+    }
+}
+
+int word_list_add_letter_to_last(struct word_list *lst, char c)
+{
+    if (lst->last == NULL)
+        return 0;
+
+    lst->last->wrd = word_add_char(lst->last->wrd, c);
+    return 1;
 }
 
 static void free_word_item(struct word_item *wi)
@@ -66,4 +77,11 @@ void word_list_free(struct word_list *lst)
     }
 
     free(lst);
+}
+
+void word_list_print(struct word_list *lst)
+{
+    struct word_item *tmp;
+    for (tmp = lst->first; tmp; tmp = tmp->next)
+        word_put(stdout, tmp->wrd);
 }
