@@ -38,11 +38,15 @@ static void switch_traverse_mode(struct line_traverse_state *state)
     state->mode = state->mode == regular ? in_quotes : regular;
 }
 
-static void process_spec_char(struct line_traverse_state *state)
+static void process_spec_char(struct line_traverse_state *state,
+        struct word_list *words)
 {
-    if (state->cur_c == '"') 
+    if (state->cur_c == '"') {
+        if (!state->in_word && state->mode == in_quotes)
+            word_list_add_item(words);
+
         switch_traverse_mode(state);
-    else if (state->cur_c == '\\')
+    } else if (state->cur_c == '\\')
         state->ignore_spec = 1;
 }
 
@@ -59,7 +63,7 @@ int tokenize_input_line_to_word_list(FILE *f,
 
     while (!char_is_eol((state.cur_c = getc(f)))) {
         if (cur_char_is_special(&state))
-            process_spec_char(&state);
+            process_spec_char(&state, *out_words);
         else {
             if (!state.in_word && cur_char_is_in_word(&state))
                  word_list_add_item(*out_words);
