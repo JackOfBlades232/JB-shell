@@ -62,7 +62,7 @@ struct word *word_list_pop_first(struct word_list *lst)
         return NULL;
 
     ret = lst->first->wrd;
-    free_word_item(lst->first);
+    free(lst->first); /* just free item and leave word in heap */
     return ret;
 }
 
