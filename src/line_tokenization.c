@@ -52,6 +52,42 @@ static void process_spec_char(struct line_traverse_state *state,
         state->ignore_spec = 1;
 }
 
+static int char_is_first_in_split_pattern(int c)
+{
+    return c == '<' || c == '>' || c == '&' || c == '|' || 
+        c == ';' || c == '(' || c == ')';
+}
+
+static int two_chars_are_split_pattern(int c1, int c2)
+{
+    return (c1 == '>' && c2 == '>') || 
+        (c1 == '|' && c2 == '|') ||
+        (c1 == '&' && c2 == '&');
+}
+
+static int try_extract_split_pattern(FILE *f,
+        struct line_traverse_state *state, struct word_list *words)
+{ 
+    int second_c;
+
+    if (state->mode == in_quotes || 
+            !char_is_first_in_split_pattern(state->cur_c))
+        return 0;
+
+    word_list_add_item(words);
+    word_list_add_letter_to_last(words, state->cur_c);
+
+    second_c = getc(f);
+    if (two_chars_are_split_pattern(state->cur_c, second_c)) {
+        state->cur_c = second_c;
+        word_list_add_letter_to_last(words, state->cur_c);
+    } else
+        ungetc(second_c, f);
+
+    state->in_word = 0;
+    state->ignore_spec = 0;
+    return 1;
+}
 
 int tokenize_input_line_to_word_list(FILE *f, 
         struct word_list **out_words, int *eol_char)
@@ -64,7 +100,9 @@ int tokenize_input_line_to_word_list(FILE *f,
     init_state(&state);
 
     while (!char_is_eol((state.cur_c = getc(f)))) {
-        if (cur_char_is_special(&state))
+        if (try_extract_split_pattern(f, &state, *out_words))
+            continue;
+        else if (cur_char_is_special(&state))
             process_spec_char(&state, *out_words);
         else {
             if (!state.in_word && cur_char_is_in_word(&state))

@@ -10,6 +10,15 @@ Shell-I:
     * Fix concatenated empty words: should be 1 empty wrd
 
 Shell-II:
-- Add prog-executing with wait and status display to prompt (5_15)
-    - Add cd command execution: call chdir in parent proc
-- Implement no-param cd (chdir to user root) (5_16)
+* Add prog-executing with wait and status display to prompt (5_15)
+    * Add cd command execution: call chdir in parent proc
+* Implement no-param cd (chdir to user root) (5_16)
+
+Shell-III:
+- Add split-pattern processing to tokenizer
+    - Patterns: &, >, <, >>, |, ;, (, ), &&, ||
+    - Deal with screening \ logic when right before split-pattern
+- Add & processing to cmd execution
+    - when & after cmd, run it in the background
+    - If anything after &, communicate an error
+    - Fix regular proc wait (use wait cycle with pid checking)
