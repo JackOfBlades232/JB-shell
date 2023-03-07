@@ -7,10 +7,31 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <pwd.h>
+
+extern char **environ;
 
 static int cmd_is_cd(char *prog_name, int argc)
 {
-    return strcmp(prog_name, "cd") == 0 && argc == 2;
+    return strcmp(prog_name, "cd") == 0 && argc <= 2;
+}
+
+static int try_execute_cd(char *prog_name, int argc, char **argv,
+        struct command_res *res)
+{
+    const char *dir;
+
+    if (!cmd_is_cd(prog_name, argc))
+        return 0;
+
+    if (argc == 1) {
+        if ((dir = getenv("HOME")) == NULL)
+            dir = getpwuid(getuid())->pw_dir;
+    } else
+        dir = argv[1];
+
+    res->type = chdir(dir) == -1 ? failed : noproc;
+    return 1;
 }
 
 int execute_cmd(struct word_list *tokens, struct command_res *res)
@@ -29,11 +50,8 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
     argv = word_list_create_token_ptrs(tokens);
     prog_name = argv[0];
 
-    if (cmd_is_cd(prog_name, argc)) {
-        int chdir_res = chdir(argv[1]);
-        res->type = chdir_res == -1 ? failed : noproc;
+    if (try_execute_cd(prog_name, argc, argv, res))
         goto deinit;
-    }
 
     pid = fork();
     if (pid == 0) { /* child proc */
