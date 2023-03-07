@@ -20,10 +20,10 @@ struct word_list *word_list_create()
     return lst;
 }
 
-void word_list_add_item(struct word_list *lst)
+void word_list_add_item(struct word_list *lst, enum word_type wtype)
 {
     struct word_item *tmp = malloc(sizeof(struct word_item));
-    tmp->wrd = word_create();
+    tmp->wrd = word_create(wtype);
     tmp->next = NULL;
 
     if (word_list_is_empty(lst))

@@ -9,11 +9,12 @@ enum {
 };
 
 struct word {
+    enum word_type wtype;
     char *content;
     int cap;
 };
 
-struct word *word_create()
+struct word *word_create(enum word_type wtype)
 {
     struct word *w;
 
@@ -21,6 +22,8 @@ struct word *word_create()
     w->cap = base_word_cap;
     w->content = malloc(sizeof(char) * w->cap);
     *w->content = '\0';
+
+    w->wtype = wtype;
 
     return w;
 }
@@ -64,4 +67,9 @@ void word_free(struct word *w)
 char *word_content(struct word *w)
 {
     return w->content;
+}
+
+int word_is_split_ptn(struct word *w)
+{
+    return w->wtype == split_pattern;
 }

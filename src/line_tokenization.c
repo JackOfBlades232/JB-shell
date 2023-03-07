@@ -45,7 +45,7 @@ static void process_spec_char(struct line_traverse_state *state,
         switch_traverse_mode(state);
 
         if (!state->in_word && state->mode == in_quotes) {
-            word_list_add_item(words);
+            word_list_add_item(words, regular_wrd);
             state->in_word = 1;
         }
     } else if (state->cur_c == '\\')
@@ -74,7 +74,7 @@ static int try_extract_split_pattern(FILE *f,
             !char_is_first_in_split_pattern(state->cur_c))
         return 0;
 
-    word_list_add_item(words);
+    word_list_add_item(words, split_pattern);
     word_list_add_letter_to_last(words, state->cur_c);
 
     second_c = getc(f);
@@ -106,7 +106,7 @@ int tokenize_input_line_to_word_list(FILE *f,
             process_spec_char(&state, *out_words);
         else {
             if (!state.in_word && cur_char_is_in_word(&state))
-                 word_list_add_item(*out_words);
+                 word_list_add_item(*out_words, regular_wrd);
 
             state.in_word = cur_char_is_in_word(&state);
 
