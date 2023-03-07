@@ -8,6 +8,7 @@ struct command {
     char **argv;
     int argv_cap;
     int run_in_background;
+    int stdin_fd, stdout_fd;
 };
 
 void init_command(struct command *cp);

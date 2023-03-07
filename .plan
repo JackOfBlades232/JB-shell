@@ -23,3 +23,7 @@ Shell-III:
     * If anything after &, communicate an error
     * when & after cmd, run it in the background
     * Fix regular proc wait (use wait cycle with pid checking)
+
+Shell-IV:
+* Add split between command processing and spec seps processing, if mingled, err
+* Add processing of >, < and >> (redirection of in, out, out+append)

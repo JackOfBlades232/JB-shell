@@ -1,9 +1,13 @@
 /* Toy-Shell/src/execute_command.c */
 #include "execute_command.h"
 #include "command.h"
+#include "word.h"
+#include "word_list.h"
 
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -34,33 +38,72 @@ static int try_execute_cd(struct command *cmd, struct command_res *res)
     return 1;
 }
 
-static int process_split_ptn(char *ptn, struct command *cmd,
+static int prepare_stdin_redirection(struct command *cmd, 
         struct word_list *remaining_tokens)
 {
-    if (strcmp(ptn, "&") == 0) {
-        cmd->run_in_background = 1;
-        return word_list_is_empty(remaining_tokens);
-    } else if (strcmp(ptn, "&&") == 0) {
-        return -1;
-    } else if (strcmp(ptn, "|") == 0) {
-        return -1;
-    } else if (strcmp(ptn, "||") == 0) {
-        return -1;
-    } else if (strcmp(ptn, "<") == 0) {
-        return -1;
-    } else if (strcmp(ptn, ">") == 0) {
-        return -1;
-    } else if (strcmp(ptn, ">>") == 0) {
-        return -1;
-    } else if (strcmp(ptn, ";") == 0) {
-        return -1;
-    } else if (strcmp(ptn, "(") == 0) {
-        return -1;
-    } else if (strcmp(ptn, ")") == 0) {
-        return -1;
+    struct word *w;
+    int res = 0;
+
+    if (word_list_is_empty(remaining_tokens))
+        return 0;
+    if (cmd->stdin_fd != -1)
+        return 0;
+
+    w = word_list_pop_first(remaining_tokens);
+    if (!word_is_split_ptn(w)) {
+        cmd->stdin_fd = open(word_content(w), O_RDONLY);
+        if (cmd->stdin_fd != -1)
+            res = 1;
     }
 
-    return -1;
+    word_free(w);
+    return res;
+
+}
+
+static int prepare_stdout_redirection(struct command *cmd, 
+        struct word_list *remaining_tokens, int is_append)
+{
+    struct word *w;
+    int res = 0;
+    int mode = O_WRONLY | O_CREAT | (is_append ? O_APPEND : O_TRUNC);
+
+    if (word_list_is_empty(remaining_tokens))
+        return 0;
+    if (cmd->stdout_fd != -1)
+        return 0;
+
+    w = word_list_pop_first(remaining_tokens);
+    if (!word_is_split_ptn(w)) {
+        cmd->stdout_fd = open(word_content(w), mode, 0666);
+        if (cmd->stdout_fd != -1)
+            res = 1;
+    }
+
+    word_free(w);
+    return res;
+
+}
+
+static int process_split_ptn(struct word *w, struct command *cmd,
+        struct word_list *remaining_tokens)
+{
+    char *ptn = word_content(w);
+    int res = -1; /* not implemented */
+
+    if (strcmp(ptn, "&") == 0) {
+        cmd->run_in_background = 1;
+        res = word_list_is_empty(remaining_tokens);
+    } else if (strcmp(ptn, "<") == 0) {
+        res = prepare_stdin_redirection(cmd, remaining_tokens);
+    } else if (strcmp(ptn, ">") == 0) {
+        res = prepare_stdout_redirection(cmd, remaining_tokens, 0);
+    } else if (strcmp(ptn, ">>") == 0) {
+        res = prepare_stdout_redirection(cmd, remaining_tokens, 1);
+    }
+
+    word_free(w);
+    return res;
 }
 
 int execute_cmd(struct word_list *tokens, struct command_res *res)
@@ -75,18 +118,31 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
         return 1;
 
     init_command(&cmd);
+
     while ((w = word_list_pop_first(tokens)) != NULL) {
-        char *wc = word_content(w);
+        if (word_is_split_ptn(w))
+            break;
+
+        add_arg_to_command(&cmd, word_content(w));
+        free(w); /* still need the content in cmd */
+    }
+
+    while (w != NULL) {
         int split_res;
 
-        if (word_is_split_ptn(w)) {
-            split_res = process_split_ptn(wc, &cmd, tokens);
-            if (split_res <= 0) {
-                res->type = split_res == -1 ? not_implemented : failed;
-                goto deinit;
-            }
-        } else
-            add_arg_to_command(&cmd, word_content(w));
+        if (!word_is_split_ptn(w)) {
+            res->type = failed;
+            word_free(w);
+            goto deinit;
+        }
+
+        split_res = process_split_ptn(w, &cmd, tokens);
+        if (split_res <= 0) {
+            res->type = split_res == -1 ? not_implemented : failed;
+            goto deinit;
+        }
+
+        w = word_list_pop_first(tokens);
     }
 
     if (try_execute_cd(&cmd, res))
@@ -97,6 +153,11 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
 
     pid = fork();
     if (pid == 0) { /* child proc */
+        if (cmd.stdin_fd != STDIN_FILENO) /* set redirections of io */
+            dup2(cmd.stdin_fd, STDIN_FILENO);
+        if (cmd.stdout_fd != STDOUT_FILENO)
+            dup2(cmd.stdout_fd, STDOUT_FILENO);
+
         execvp(cmd.cmd_name, cmd.argv);
         perror(cmd.cmd_name);
         _exit(1);
@@ -104,6 +165,11 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
         res->type = failed;
         goto deinit;
     }
+
+    if (cmd.stdin_fd != -1)
+        close(cmd.stdin_fd);
+    if (cmd.stdout_fd != -1)
+        close(cmd.stdout_fd);
 
     if (cmd.run_in_background) {
         res->type = noproc;

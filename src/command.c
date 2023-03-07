@@ -13,6 +13,8 @@ void init_command(struct command *cp) {
     cp->argv_cap = base_argv_cap;
 
     cp->run_in_background = 0;
+    cp->stdin_fd = -1;
+    cp->stdout_fd = -1;
 }
 
 static char **resize_argv(char **argv, int *cur_cap) {
