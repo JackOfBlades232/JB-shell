@@ -5,6 +5,8 @@
 #include "execute_command.h"
 
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 int run_command_prompt()
 {
@@ -33,6 +35,9 @@ int run_command_prompt()
 #endif
 
         word_list_free(words);
+#ifndef TOKENIZER_DEBUG
+        wait4(-1, NULL, WNOHANG, NULL); /* kill all zombies */
+#endif
     }
 
     putchar('\n');

@@ -51,13 +51,16 @@ static void free_word_item(struct word_item *wi)
 
 struct word *word_list_pop_first(struct word_list *lst)
 {
+    struct word_item *tmp;
     struct word *ret;
 
     if (word_list_is_empty(lst))
         return NULL;
 
+    tmp = lst->first;
     ret = lst->first->wrd;
-    free(lst->first); /* just free item and leave word in heap */
+    lst->first = lst->first->next;
+    free(tmp); /* just free item and leave word in heap */
     return ret;
 }
 
@@ -94,20 +97,4 @@ int word_list_len(struct word_list *lst)
 int word_list_is_empty(struct word_list *lst)
 {
     return word_list_len(lst) == 0;
-}
-
-char **word_list_create_token_ptrs(struct word_list *lst)
-{
-    struct word_item *tmp;
-    char **token_ptrs = malloc((word_list_len(lst) + 1) * sizeof(char *));
-    char **tokenp;
-
-    tokenp = token_ptrs;
-    for (tmp = lst->first; tmp; tmp = tmp->next) {
-        *tokenp = word_content(tmp->wrd);
-        tokenp++;
-    }
-
-    *tokenp = NULL;
-    return token_ptrs;
 }

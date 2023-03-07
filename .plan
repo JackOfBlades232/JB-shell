@@ -18,8 +18,8 @@ Shell-III:
 * Add split-pattern processing to tokenizer (5_17)
     * Patterns: &, >, <, >>, |, ;, (, ), &&, ||
     * Deal with screening \ logic when right before split-pattern
-- Add & processing to cmd execution (5_17)
-    - remake word_list->argv reading to 1 by 1 (to process & from list)
-    - when & after cmd, run it in the background
-    - If anything after &, communicate an error
-    - Fix regular proc wait (use wait cycle with pid checking)
+* Add & processing to cmd execution (5_17)
+    * remake word_list->argv reading to 1 by 1 (to process & from list)
+    * If anything after &, communicate an error
+    * when & after cmd, run it in the background
+    * Fix regular proc wait (use wait cycle with pid checking)

@@ -6,7 +6,7 @@
 
 #include <stdio.h>
 
-enum command_res_type { exited, killed, failed, noproc };
+enum command_res_type { exited, killed, failed, noproc, not_implemented };
 struct command_res {
     enum command_res_type type;
     int code;
