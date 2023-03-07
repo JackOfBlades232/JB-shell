@@ -20,11 +20,6 @@ struct word_list *word_list_create()
     return lst;
 }
 
-static int word_list_is_empty(struct word_list *lst)
-{
-    return lst->first == NULL && lst->last == NULL;
-}
-
 void word_list_add_item(struct word_list *lst)
 {
     struct word_item *tmp = malloc(sizeof(struct word_item));
@@ -84,4 +79,35 @@ void word_list_print(struct word_list *lst)
     struct word_item *tmp;
     for (tmp = lst->first; tmp; tmp = tmp->next)
         word_put(stdout, tmp->wrd);
+}
+
+int word_list_len(struct word_list *lst)
+{
+    struct word_item *tmp;
+    int len = 0;
+
+    for (tmp = lst->first; tmp; tmp = tmp->next)
+        len++;
+    return len;
+}
+
+int word_list_is_empty(struct word_list *lst)
+{
+    return word_list_len(lst) == 0;
+}
+
+char **word_list_create_token_ptrs(struct word_list *lst)
+{
+    struct word_item *tmp;
+    char **token_ptrs = malloc((word_list_len(lst) + 1) * sizeof(char *));
+    char **tokenp;
+
+    tokenp = token_ptrs;
+    for (tmp = lst->first; tmp; tmp = tmp->next) {
+        *tokenp = word_content(tmp->wrd);
+        tokenp++;
+    }
+
+    *tokenp = NULL;
+    return token_ptrs;
 }

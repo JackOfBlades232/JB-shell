@@ -60,3 +60,8 @@ void word_free(struct word *w)
     free(w->content);
     free(w);
 }
+
+char *word_content(struct word *w)
+{
+    return w->content;
+}

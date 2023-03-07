@@ -8,3 +8,8 @@ Shell-I:
 * Add \ as screening symbol for " and for itself (4_37)
 * Add empty word impl (4_38)
     * Fix concatenated empty words: should be 1 empty wrd
+
+Shell-II:
+- Add prog-executing with wait and status display to prompt (5_15)
+    - Add cd command execution: call chdir in parent proc
+- Implement no-param cd (chdir to user root) (5_16)

@@ -11,4 +11,6 @@ struct word *word_add_char(struct word *w, char c);
 int word_put(FILE *f, struct word *w);
 void word_free(struct word *w);
 
+char *word_content(struct word *w);
+
 #endif
