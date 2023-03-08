@@ -14,16 +14,19 @@ Shell-II:
     * Add cd command execution: call chdir in parent proc
 * Implement no-param cd (chdir to user root) (5_16)
 
-Shell-III:
-* Add split-pattern processing to tokenizer (5_17)
+Shell-III: (5_17)
+* Add split-pattern processing to tokenizer
     * Patterns: &, >, <, >>, |, ;, (, ), &&, ||
     * Deal with screening \ logic when right before split-pattern
-* Add & processing to cmd execution (5_17)
+* Add & processing to cmd execution
     * remake word_list->argv reading to 1 by 1 (to process & from list)
     * If anything after &, communicate an error
     * when & after cmd, run it in the background
     * Fix regular proc wait (use wait cycle with pid checking)
 
-Shell-IV:
+Shell-IV: (5_19)
 * Add split between command processing and spec seps processing, if mingled, err
 * Add processing of >, < and >> (redirection of in, out, out+append)
+
+* Implement zombie cleaning on SIGCHLD (5_24)
+    * Disable it for wait cycle in non-bg execution of command

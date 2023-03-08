@@ -4,6 +4,8 @@
 #include "word.h"
 #include "word_list.h"
 
+#include <signal.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -15,6 +17,20 @@
 #include <pwd.h>
 
 extern char **environ;
+
+void chld_handler(int s)
+{
+    int save_errno = errno;
+    signal(SIGCHLD, chld_handler);
+    while (wait4(-1, NULL, WNOHANG, NULL) > 0)
+        {}
+    errno = save_errno;
+}
+
+void set_up_process_control()
+{
+    signal(SIGCHLD, chld_handler);
+}
 
 static int cmd_is_cd(struct command *cmd)
 {
@@ -148,13 +164,10 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
     if (try_execute_cd(&cmd, res))
         goto deinit;
 
-    if (cmd.run_in_background) { /* kill all zombies */
-        while (wait4(-1, NULL, WNOHANG, NULL) > 0)
-            {}
-    }
-
     pid = fork();
     if (pid == 0) { /* child proc */
+        signal(SIGCHLD, SIG_DFL); /* for child restore default handler */
+
         if (cmd.stdin_fd != STDIN_FILENO) /* set redirections of io */
             dup2(cmd.stdin_fd, STDIN_FILENO);
         if (cmd.stdout_fd != STDOUT_FILENO)
@@ -178,12 +191,14 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
         goto deinit;
     }
 
+    signal(SIGCHLD, SIG_DFL); /* remove additional wait cycle */
     while ((wr = wait(&status)) != pid) {
         if (wr == -1) {
             res->type = failed;
             goto deinit;
         }
     }
+    signal(SIGCHLD, chld_handler); /* restore handler */
 
     if (WIFEXITED(status)) {
         res->type = exited;

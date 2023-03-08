@@ -16,6 +16,7 @@ int run_command_prompt()
 
 #ifndef TOKENIZER_DEBUG
     struct command_res cmd_res;
+    set_up_process_control();
 #endif
 
     while (eol_ch != EOF) {
@@ -35,10 +36,6 @@ int run_command_prompt()
 #endif
 
         word_list_free(words);
-#ifndef TOKENIZER_DEBUG
-        while (wait4(-1, NULL, WNOHANG, NULL) > 0) /* kill all zombies */
-            {}
-#endif
     }
 
     putchar('\n');

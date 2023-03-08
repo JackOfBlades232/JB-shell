@@ -12,6 +12,7 @@ struct command_res {
     int code;
 };
 
+void set_up_process_control();
 int execute_cmd(struct word_list *tokens, struct command_res *res);
 void put_cmd_res(FILE *f, struct command_res *res);
 
