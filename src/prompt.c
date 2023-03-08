@@ -36,7 +36,8 @@ int run_command_prompt()
 
         word_list_free(words);
 #ifndef TOKENIZER_DEBUG
-        wait4(-1, NULL, WNOHANG, NULL); /* kill all zombies */
+        while (wait4(-1, NULL, WNOHANG, NULL) > 0) /* kill all zombies */
+            {}
 #endif
     }
 

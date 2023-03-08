@@ -148,8 +148,10 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
     if (try_execute_cd(&cmd, res))
         goto deinit;
 
-    if (cmd.run_in_background) /* kill all zombies */
-        wait4(-1, NULL, WNOHANG, NULL);
+    if (cmd.run_in_background) { /* kill all zombies */
+        while (wait4(-1, NULL, WNOHANG, NULL) > 0)
+            {}
+    }
 
     pid = fork();
     if (pid == 0) { /* child proc */
