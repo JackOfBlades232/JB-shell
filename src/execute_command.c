@@ -145,12 +145,29 @@ static int process_end_separator(
     return res;
 }
 
+static int prepare_pipe_for_two_commands(
+        struct command *sender,
+        struct command *reciever)
+{
+    int fd[2];
+
+    if (sender->stdout_fd != -1 || reciever->stdin_fd != -1)
+        return 0;
+    
+    pipe(fd);
+    sender->stdout_fd = fd[1]; 
+    reciever->stdin_fd = fd[0];
+    return 1;
+}
+
 static int process_inter_cmd_separator(
         struct word *w, 
         struct command_chain *cmd_chain,
         struct word_list *remaining_tokens)
 {
-    struct command *last_cmd = get_last_cmd_in_chain(cmd_chain);
+    struct command 
+        *last_cmd = get_last_cmd_in_chain(cmd_chain),
+        *new_cmd;
     char *sep = word_content(w);
     int res = 0;
 
@@ -158,8 +175,8 @@ static int process_inter_cmd_separator(
         if (last_cmd == NULL || command_is_empty(last_cmd))
             res = 0;
         else {
-            add_cmd_to_chain(cmd_chain);
-            res = 1;
+            new_cmd = add_cmd_to_chain(cmd_chain);
+            res = prepare_pipe_for_two_commands(last_cmd, new_cmd);
         }
     } else if (strcmp(sep, "||") == 0) { /* not implemented */
         res = -1;
@@ -256,9 +273,6 @@ static struct command_chain *parse_tokens_to_cmd_chain(
         parse_command_end(cmd_chain, tokens, res, last_w);
 
     if (parse_res) {
-        /* test */
-        print_cmd_chain(cmd_chain);
-
         return cmd_chain;
     } else {
         free_command_chain(cmd_chain);
@@ -266,14 +280,68 @@ static struct command_chain *parse_tokens_to_cmd_chain(
     }
 }
 
+static void close_additional_descriptors(struct command *cmd)
+{
+    if (cmd->stdin_fd != -1 && cmd->stdin_fd != STDIN_FILENO)
+        close(cmd->stdin_fd);
+    if (cmd->stdout_fd != -1 && cmd->stdout_fd != STDOUT_FILENO)
+        close(cmd->stdout_fd);
+}
+
+static void close_all_additional_descriptors(struct command_chain *cmd_chain)
+{
+    map_to_all_cmds_in_chain(cmd_chain, close_additional_descriptors);
+}
+
+static int execute_next_command(struct command_chain *cmd_chain)
+{
+    struct command *cmd;
+    int pid;
+
+    cmd = get_first_cmd_in_chain(cmd_chain);
+    if (cmd == NULL)
+        return 0;
+
+    pid = fork();
+    if (pid == 0) { /* child proc */
+        signal(SIGCHLD, SIG_DFL); /* for child restore default handler */
+
+        if (cmd->stdin_fd != -1) /* set redirections of io */
+            dup2(cmd->stdin_fd, STDIN_FILENO);
+        if (cmd->stdout_fd != -1)
+            dup2(cmd->stdout_fd, STDOUT_FILENO);
+        close_all_additional_descriptors(cmd_chain);
+
+        execvp(cmd->cmd_name, cmd->argv);
+        perror(cmd->cmd_name);
+        _exit(1);
+    } 
+
+    close_additional_descriptors(cmd);
+    delete_first_cmd_from_chain(cmd_chain);
+
+    return pid;
+}
+
+static int spawn_processes_for_all_commands(struct command_chain *cmd_chain)
+{
+    int res;
+    while (!cmd_chain_is_empty(cmd_chain)) {
+        res = execute_next_command(cmd_chain);
+        if (!res)
+            return 0;
+    }
+
+    return 1;
+}
+            
 int execute_cmd(struct word_list *tokens, struct command_res *res)
 {
-    int pid;
     int status, wr;
 
     struct command_chain *cmd_chain;
 
-    struct command *cmd = NULL; /* test */
+    int chain_len; /* test */
     
     if (word_list_is_empty(tokens))
         return 1;
@@ -282,40 +350,22 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
     if (cmd_chain == NULL)
         goto deinit;
 
-    cmd = get_first_cmd_in_chain(cmd_chain);
-
-    if (try_execute_cd(cmd, res))
-        goto deinit;
-
-    pid = fork();
-    if (pid == 0) { /* child proc */
-        signal(SIGCHLD, SIG_DFL); /* for child restore default handler */
-
-        if (cmd->stdin_fd != STDIN_FILENO) /* set redirections of io */
-            dup2(cmd->stdin_fd, STDIN_FILENO);
-        if (cmd->stdout_fd != STDOUT_FILENO)
-            dup2(cmd->stdout_fd, STDOUT_FILENO);
-
-        execvp(cmd->cmd_name, cmd->argv);
-        perror(cmd->cmd_name);
-        _exit(1);
-    } else if (pid == -1) {
-        res->type = failed;
+    /* test */
+    chain_len = cmd_chain_len(cmd_chain);
+    if (chain_len == 1 &&
+            try_execute_cd(get_first_cmd_in_chain(cmd_chain), res)) {
         goto deinit;
     }
 
-    if (cmd->stdin_fd != -1)
-        close(cmd->stdin_fd);
-    if (cmd->stdout_fd != -1)
-        close(cmd->stdout_fd);
+    spawn_processes_for_all_commands(cmd_chain);
 
-    if (cmd->run_in_background) {
+    /* if (cmd->run_in_background) {
         res->type = noproc;
         goto deinit;
-    }
+    }*/
 
     signal(SIGCHLD, SIG_DFL); /* remove additional wait cycle */
-    while ((wr = wait(&status)) != pid) {
+    while ((wr = wait(&status)) > 0) { /* test, no bg dealings */
         if (wr == -1) {
             res->type = failed;
             goto deinit;

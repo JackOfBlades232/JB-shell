@@ -32,11 +32,14 @@ Shell-IV: (5_19)
     * Disable it for wait cycle in non-bg execution of command
 
 Shell-V: (5_30, 5_31)
-- Create a command linked list, and it's filling from tokens
+* Create a command linked list, and it's filling from tokens
     * Implement linked list for commands with functionality
     * Remake execute_cmd command reading to linked list (| = split)
     * Refactor execute_cmd (still execute only the first command)
-- Add all processes launching in chain (for now, all with std ins and outs)
-    - Refactor process launching in execute_command
-- Implement chain io redirection
-- Test and debug zombie cleanup
+* Add all processes launching in chain
+    * Refactor process launching in execute_command
+    * Implement chain io redirection
+- Reimplement bg launching
+    - Make in_backdround a property of cmd chain
+    - Remake wait cycle for non-bg commands
+- Split up, clean up and refactor command and execute_command`
