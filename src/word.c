@@ -69,7 +69,7 @@ char *word_content(struct word *w)
     return w->content;
 }
 
-int word_is_split_ptn(struct word *w)
+int word_is_separator(struct word *w)
 {
-    return w->wtype == split_pattern;
+    return w->wtype == separator;
 }

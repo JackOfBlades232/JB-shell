@@ -18,4 +18,4 @@ deps.mk: $(SRCMODULES)
 	$(CC) -MM $^ > $@
 
 clean:
-	rm -f *.o prog
+	rm -f src/*.o *.o prog

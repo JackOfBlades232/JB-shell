@@ -74,7 +74,7 @@ static int try_extract_split_pattern(FILE *f,
             !char_is_first_in_split_pattern(state->cur_c))
         return 0;
 
-    word_list_add_item(words, split_pattern);
+    word_list_add_item(words, separator);
     word_list_add_letter_to_last(words, state->cur_c);
 
     second_c = getc(f);
