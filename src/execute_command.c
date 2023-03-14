@@ -3,6 +3,7 @@
 #include "command.h"
 #include "word.h"
 #include "word_list.h"
+#include "int_set.h"
 
 #include <signal.h>
 #include <errno.h>
@@ -130,8 +131,7 @@ static int process_end_separator(
     int res = 0;
 
     if (strcmp(sep, "&") == 0) {
-        struct command *last_cmd = get_last_cmd_in_chain(cmd_chain);
-        last_cmd->run_in_background = 1;
+        set_cmd_chain_to_background(cmd_chain);
         res = word_list_is_empty(remaining_tokens);
     } else if (strcmp(sep, "<") == 0) {
         res = prepare_stdin_redirection(cmd_chain, remaining_tokens);
@@ -323,13 +323,18 @@ static int execute_next_command(struct command_chain *cmd_chain)
     return pid;
 }
 
-static int spawn_processes_for_all_commands(struct command_chain *cmd_chain)
+static int spawn_processes_for_all_commands(
+        struct command_chain *cmd_chain,
+        struct int_set *pids)
 {
-    int res;
+    int pid;
     while (!cmd_chain_is_empty(cmd_chain)) {
-        res = execute_next_command(cmd_chain);
-        if (!res)
+        pid = execute_next_command(cmd_chain);
+        if (!pid)
             return 0;
+
+        if (!cmd_chain_is_background(cmd_chain))
+            int_set_add(pids, pid);
     }
 
     return 1;
@@ -337,11 +342,12 @@ static int spawn_processes_for_all_commands(struct command_chain *cmd_chain)
             
 int execute_cmd(struct word_list *tokens, struct command_res *res)
 {
-    int status, wr;
-
     struct command_chain *cmd_chain;
 
     int chain_len; /* test */
+
+    struct int_set *pids = NULL;
+    int status, wr;
     
     if (word_list_is_empty(tokens))
         return 1;
@@ -355,21 +361,28 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
     if (chain_len == 1 &&
             try_execute_cd(get_first_cmd_in_chain(cmd_chain), res)) {
         goto deinit;
+    } else if (chain_len > 1 && chain_contains_cmd(cmd_chain, "cd")) {
+        res->type = failed;
+        goto deinit;
     }
 
-    spawn_processes_for_all_commands(cmd_chain);
+    pids = create_int_set();
+    spawn_processes_for_all_commands(cmd_chain, pids);
 
-    /* if (cmd->run_in_background) {
+    if (cmd_chain_is_background(cmd_chain)) {
         res->type = noproc;
         goto deinit;
-    }*/
+    }
 
     signal(SIGCHLD, SIG_DFL); /* remove additional wait cycle */
-    while ((wr = wait(&status)) > 0) { /* test, no bg dealings */
+    while (!int_set_is_empty(pids)) {
+        wr = wait(&status);
         if (wr == -1) {
             res->type = failed;
             goto deinit;
         }
+
+        int_set_remove(pids, wr);
     }
     signal(SIGCHLD, chld_handler); /* restore handler */
 
@@ -382,6 +395,8 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
     }
 
 deinit:
+    if (pids != NULL)
+        free_int_set(pids);
     if (cmd_chain != NULL)
         free_command_chain(cmd_chain);
     return 0;

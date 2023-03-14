@@ -39,7 +39,7 @@ Shell-V: (5_30, 5_31)
 * Add all processes launching in chain
     * Refactor process launching in execute_command
     * Implement chain io redirection
-- Reimplement bg launching
-    - Make in_backdround a property of cmd chain
-    - Remake wait cycle for non-bg commands
-- Split up, clean up and refactor command and execute_command`
+* Reimplement bg launching
+    * Make in_backdround a property of cmd chain
+    * Remake wait cycle for non-bg commands
+- Split up, clean up and refactor command and execute_command

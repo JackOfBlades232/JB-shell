@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 enum { base_argv_cap = 10, argv_cap_mult = 2 };
 
@@ -13,6 +14,7 @@ struct command_chain_node {
 
 struct command_chain {
     struct command_chain_node *first, *last;
+    int run_in_background;
 };
 
 int command_is_empty(struct command *cp)
@@ -37,7 +39,6 @@ static void init_command(struct command *cp)
     *(cp->argv) = NULL;
     cp->argv_cap = base_argv_cap;
 
-    cp->run_in_background = 0;
     cp->stdin_fd = -1;
     cp->stdout_fd = -1;
 }
@@ -66,12 +67,23 @@ struct command_chain *create_cmd_chain()
     struct command_chain *cc = malloc(sizeof(struct command_chain));
     cc->first = NULL;
     cc->last = NULL;
+    cc->run_in_background = 0;
     return cc;
 }
 
 int cmd_chain_is_empty(struct command_chain *cc)
 {
     return cc->first == NULL;
+}
+
+int cmd_chain_is_background(struct command_chain *cc)
+{
+    return cc->run_in_background;
+}
+
+void set_cmd_chain_to_background(struct command_chain *cc)
+{
+    cc->run_in_background = 1;
 }
 
 int cmd_chain_len(struct command_chain *cc)
@@ -159,6 +171,16 @@ void map_to_all_cmds_in_chain(struct command_chain *cc, command_modifier func)
     for (tmp = cc->first; tmp; tmp = tmp->next) {
         (*func)(tmp->cmd);
     }
+}
+
+int chain_contains_cmd(struct command_chain *cc, const char *cmd_name)
+{
+    struct command_chain_node *tmp;
+    for (tmp = cc->first; tmp; tmp = tmp->next) {
+        if (strcmp(cmd_name, tmp->cmd->cmd_name) == 0)
+            return 1;
+    }
+    return 0;
 }
 
 void print_cmd_chain(struct command_chain *cc)
