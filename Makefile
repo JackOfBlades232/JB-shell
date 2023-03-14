@@ -1,5 +1,6 @@
-SRCMODULES = src/word.c src/word_list.c src/line_tokenization.c \
-			 src/int_set.c src/command.c src/execute_command.c src/prompt.c
+SRCMODULES = src/word.c src/word_list.c src/line_tokenization.c src/int_set.c \
+			 src/command.c src/parse_command.c src/execute_command.c \
+			 src/prompt.c
 OBJMODULES = $(SRCMODULES:.c=.o)
 CC = gcc
 CFLAGS = -g -Wall

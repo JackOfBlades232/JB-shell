@@ -3,14 +3,9 @@
 #define EXECUTE_COMMAND_SENTRY
 
 #include "word_list.h"
+#include "command.h"
 
 #include <stdio.h>
-
-enum command_res_type { exited, killed, failed, noproc, not_implemented };
-struct command_res {
-    enum command_res_type type;
-    int code;
-};
 
 void set_up_process_control();
 int execute_cmd(struct word_list *tokens, struct command_res *res);

@@ -10,6 +10,12 @@ struct command {
     int stdin_fd, stdout_fd;
 };
 
+enum command_res_type { exited, killed, failed, noproc, not_implemented };
+struct command_res {
+    enum command_res_type type;
+    int code;
+};
+
 struct command_chain;
 
 typedef void (*command_modifier)(struct command *);
