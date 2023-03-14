@@ -4,6 +4,7 @@
 
 #include "word_list.h"
 #include "command.h"
+#include "cmd_res.h"
 
 #include <stdio.h>
 

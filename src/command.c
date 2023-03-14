@@ -17,12 +17,12 @@ struct command_chain {
     int run_in_background;
 };
 
-int command_is_empty(struct command *cp)
+int cmd_is_empty(struct command *cp)
 {
     return cp->cmd_name == NULL;
 }
 
-void free_command(struct command *cp) 
+void free_cmd(struct command *cp) 
 {
     char **argvp;
     for (argvp = cp->argv; *argvp; argvp++)
@@ -31,7 +31,7 @@ void free_command(struct command *cp)
     free(cp);
 }
 
-static void init_command(struct command *cp)
+static void init_cmd(struct command *cp)
 {
     cp->cmd_name = NULL;
     cp->argc = 0;
@@ -49,7 +49,7 @@ static char **resize_argv(char **argv, int *cur_cap)
     return realloc(argv, *cur_cap * sizeof(char *));
 }
 
-static void add_arg_to_command(struct command *cp, char *arg) 
+static void add_arg_to_cmd(struct command *cp, char *arg) 
 {
     if (cp->argc >= cp->argv_cap - 1)
         cp->argv = resize_argv(cp->argv, &cp->argv_cap);
@@ -71,19 +71,21 @@ struct command_chain *create_cmd_chain()
     return cc;
 }
 
+void free_cmd_chain(struct command_chain *cc)
+{
+    struct command_chain_node *tmp;
+    while (cc->first != NULL) {
+        tmp = cc->first;
+        cc->first = cc->first->next;
+        free_cmd(tmp->cmd);
+        free(tmp);
+    }
+    cc->last = NULL;
+}
+
 int cmd_chain_is_empty(struct command_chain *cc)
 {
     return cc->first == NULL;
-}
-
-int cmd_chain_is_background(struct command_chain *cc)
-{
-    return cc->run_in_background;
-}
-
-void set_cmd_chain_to_background(struct command_chain *cc)
-{
-    cc->run_in_background = 1;
 }
 
 int cmd_chain_len(struct command_chain *cc)
@@ -100,7 +102,7 @@ struct command *add_cmd_to_chain(struct command_chain *cc)
     struct command_chain_node *tmp;
     tmp = malloc(sizeof(struct command_chain_node));
     tmp->cmd = malloc(sizeof(struct command));
-    init_command(tmp->cmd);
+    init_cmd(tmp->cmd);
     tmp->next = NULL;
 
     if (cc->first == NULL) {
@@ -114,11 +116,20 @@ struct command *add_cmd_to_chain(struct command_chain *cc)
     return cc->last->cmd;
 }
 
-int add_arg_to_last_chain_cmd(struct command_chain *cc, char *arg)
+int delete_first_cmd_from_chain(struct command_chain *cc)
 {
-    if (cc->last == NULL)
+    struct command_chain_node *tmp;
+
+    if (cc->first == NULL)
         return 0;
-    add_arg_to_command(cc->last->cmd, arg);
+
+    tmp = cc->first;
+    if (cc->last == tmp)
+        cc->last = tmp->next;
+    cc->first = tmp->next;
+    free_cmd(tmp->cmd);
+    free(tmp);
+
     return 1;
 }
 
@@ -136,33 +147,22 @@ struct command *get_last_cmd_in_chain(struct command_chain *cc)
     return cc->last->cmd;
 }
 
-int delete_first_cmd_from_chain(struct command_chain *cc)
+int add_arg_to_last_chain_cmd(struct command_chain *cc, char *arg)
 {
-    struct command_chain_node *tmp;
-
-    if (cc->first == NULL)
+    if (cc->last == NULL)
         return 0;
-
-    tmp = cc->first;
-    if (cc->last == tmp)
-        cc->last = tmp->next;
-    cc->first = tmp->next;
-    free_command(tmp->cmd);
-    free(tmp);
-
+    add_arg_to_cmd(cc->last->cmd, arg);
     return 1;
 }
 
-void free_command_chain(struct command_chain *cc)
+int cmd_chain_is_background(struct command_chain *cc)
 {
-    struct command_chain_node *tmp;
-    while (cc->first != NULL) {
-        tmp = cc->first;
-        cc->first = cc->first->next;
-        free_command(tmp->cmd);
-        free(tmp);
-    }
-    cc->last = NULL;
+    return cc->run_in_background;
+}
+
+void set_cmd_chain_to_background(struct command_chain *cc)
+{
+    cc->run_in_background = 1;
 }
 
 void map_to_all_cmds_in_chain(struct command_chain *cc, command_modifier func)
@@ -181,11 +181,4 @@ int chain_contains_cmd(struct command_chain *cc, const char *cmd_name)
             return 1;
     }
     return 0;
-}
-
-void print_cmd_chain(struct command_chain *cc)
-{
-    struct command_chain_node *tmp;
-    for (tmp = cc->first; tmp; tmp = tmp->next)
-        printf("%s\n", tmp->cmd->cmd_name);
 }

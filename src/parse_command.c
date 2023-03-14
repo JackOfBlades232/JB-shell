@@ -9,6 +9,24 @@
 #include <stdio.h>
 #include <string.h>
 
+static int word_is_end_separator(struct word *w)
+{
+    char *sep;
+    if (!word_is_separator(w))
+        return 0;
+    sep = word_content(w);
+    return 
+        strcmp(sep, "&") == 0 ||
+        strcmp(sep, ">") == 0 ||
+        strcmp(sep, "<") == 0 ||
+        strcmp(sep, ">>") == 0;
+}
+
+static int word_is_inter_cmd_separator(struct word *w)
+{
+    return word_is_separator(w) && !word_is_end_separator(w);
+}
+
 static int prepare_stdin_redirection(struct command_chain *cmd_chain,
         struct word_list *remaining_tokens)
 {
@@ -30,7 +48,6 @@ static int prepare_stdin_redirection(struct command_chain *cmd_chain,
 
     word_free(w);
     return res;
-
 }
 
 static int prepare_stdout_redirection(struct command_chain *cmd_chain, 
@@ -55,25 +72,6 @@ static int prepare_stdout_redirection(struct command_chain *cmd_chain,
 
     word_free(w);
     return res;
-
-}
-
-static int word_is_end_separator(struct word *w)
-{
-    char *sep;
-    if (!word_is_separator(w))
-        return 0;
-    sep = word_content(w);
-    return 
-        strcmp(sep, "&") == 0 ||
-        strcmp(sep, ">") == 0 ||
-        strcmp(sep, "<") == 0 ||
-        strcmp(sep, ">>") == 0;
-}
-
-static int word_is_inter_cmd_separator(struct word *w)
-{
-    return word_is_separator(w) && !word_is_end_separator(w);
 }
 
 static int process_end_separator(
@@ -114,24 +112,29 @@ static int prepare_pipe_for_two_commands(
     return 1;
 }
 
+static int try_add_cmd_to_pipe(struct command_chain *cmd_chain)
+{
+    struct command 
+        *last_cmd = get_last_cmd_in_chain(cmd_chain),
+        *new_cmd;
+
+    if (last_cmd == NULL || cmd_is_empty(last_cmd))
+        return 0;
+
+    new_cmd = add_cmd_to_chain(cmd_chain);
+    return prepare_pipe_for_two_commands(last_cmd, new_cmd);
+}
+
 static int process_inter_cmd_separator(
         struct word *w, 
         struct command_chain *cmd_chain,
         struct word_list *remaining_tokens)
 {
-    struct command 
-        *last_cmd = get_last_cmd_in_chain(cmd_chain),
-        *new_cmd;
     char *sep = word_content(w);
     int res = 0;
 
     if (strcmp(sep, "|") == 0) {
-        if (last_cmd == NULL || command_is_empty(last_cmd))
-            res = 0;
-        else {
-            new_cmd = add_cmd_to_chain(cmd_chain);
-            res = prepare_pipe_for_two_commands(last_cmd, new_cmd);
-        }
+        res = try_add_cmd_to_pipe(cmd_chain);
     } else if (strcmp(sep, "||") == 0) { /* not implemented */
         res = -1;
     } else if (strcmp(sep, "&") == 0) { /* will become inter-cmd */
@@ -229,7 +232,7 @@ struct command_chain *parse_tokens_to_cmd_chain(
     if (parse_res) {
         return cmd_chain;
     } else {
-        free_command_chain(cmd_chain);
+        free_cmd_chain(cmd_chain);
         return NULL;
     }
 }

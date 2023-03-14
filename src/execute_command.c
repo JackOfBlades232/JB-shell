@@ -175,7 +175,7 @@ deinit:
     if (pids != NULL)
         free_int_set(pids);
     if (cmd_chain != NULL)
-        free_command_chain(cmd_chain);
+        free_cmd_chain(cmd_chain);
     return 0;
 }
 

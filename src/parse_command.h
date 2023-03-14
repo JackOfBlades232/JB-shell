@@ -4,6 +4,7 @@
 
 #include "word_list.h"
 #include "command.h"
+#include "cmd_res.h"
 
 struct command_chain *parse_tokens_to_cmd_chain(
         struct word_list *tokens,

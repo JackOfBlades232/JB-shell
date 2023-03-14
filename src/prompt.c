@@ -3,6 +3,7 @@
 #include "line_tokenization.h"
 #include "word_list.h"
 #include "execute_command.h"
+#include "cmd_res.h"
 
 #include <stdio.h>
 #include <sys/types.h>
