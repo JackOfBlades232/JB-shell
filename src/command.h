@@ -3,11 +3,11 @@
 #define COMMAND_SENTRY
 
 struct command {
-  char *cmd_name;
-  int argc;
-  char **argv;
-  int argv_cap;
-  int stdin_fd, stdout_fd;
+    char *cmd_name;
+    int argc;
+    char **argv;
+    int argv_cap;
+    int stdin_fd, stdout_fd;
 };
 
 struct command_chain;
