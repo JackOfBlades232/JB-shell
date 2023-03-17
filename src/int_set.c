@@ -12,16 +12,21 @@ struct int_set {
     struct int_set_node *root;
 };
 
-struct int_set *create_int_set() {
+struct int_set *create_int_set() 
+{
     struct int_set *set = malloc(sizeof(struct int_set));
     set->root = NULL;
     return set;
 }
 
-int int_set_is_empty(struct int_set *set) { return set->root == NULL; }
+int int_set_is_empty(struct int_set *set) 
+{ 
+    return set->root == NULL; 
+}
 
-static struct int_set_node **subtree_find(struct int_set_node **rootp,
-        int val) {
+static struct int_set_node **subtree_find(
+        struct int_set_node **rootp, int val) 
+{
     if (*rootp == NULL || (*rootp)->val == val)
         return rootp;
     else if ((*rootp)->val > val)
@@ -30,11 +35,13 @@ static struct int_set_node **subtree_find(struct int_set_node **rootp,
         return subtree_find(&((*rootp)->right), val);
 }
 
-int val_is_in_int_set(struct int_set *set, int val) {
+int val_is_in_int_set(struct int_set *set, int val) 
+{
     return *subtree_find(&set->root, val) != NULL;
 }
 
-int int_set_add(struct int_set *set, int val) {
+int int_set_add(struct int_set *set, int val) 
+{
     struct int_set_node **place = subtree_find(&set->root, val);
     if (*place != NULL)
         return 0;
@@ -46,7 +53,8 @@ int int_set_add(struct int_set *set, int val) {
     return 1;
 }
 
-static struct int_set_node **subtree_max_place(struct int_set_node **rootp) {
+static struct int_set_node **subtree_max_place(struct int_set_node **rootp) 
+{
     if (*rootp == NULL)
         return NULL;
     else if ((*rootp)->right == NULL)
@@ -55,7 +63,8 @@ static struct int_set_node **subtree_max_place(struct int_set_node **rootp) {
         return subtree_max_place(&((*rootp)->right));
 }
 
-int int_set_remove(struct int_set *set, int val) {
+int int_set_remove(struct int_set *set, int val) 
+{
     struct int_set_node **place = subtree_find(&set->root, val);
     struct int_set_node *tmp;
     if (*place == NULL)
@@ -74,7 +83,8 @@ int int_set_remove(struct int_set *set, int val) {
     return 1;
 }
 
-static void free_subtree(struct int_set_node *root) {
+static void free_subtree(struct int_set_node *root) 
+{
     if (root == NULL)
         return;
 
@@ -83,4 +93,7 @@ static void free_subtree(struct int_set_node *root) {
     free(root);
 }
 
-void free_int_set(struct int_set *set) { free_subtree(set->root); }
+void free_int_set(struct int_set *set) 
+{ 
+    free_subtree(set->root);
+}
