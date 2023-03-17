@@ -1,5 +1,8 @@
 /* Toy-Shell/src/line_tokenization.c */
 #include "line_tokenization.h"
+#include "input.h"
+
+#include <stdlib.h>
 
 enum line_traverse_mode { regular, in_quotes };
 
@@ -18,7 +21,7 @@ static void init_state(struct line_traverse_state *state)
 
 static int char_is_eol(int c)
 {
-    return c == '\n' || c == '\r' || c == EOF;
+    return c == '\n' || c == '\r' || c == '\0';
 }
 
 static int cur_char_is_special(const struct line_traverse_state *state)
@@ -65,7 +68,7 @@ static int two_chars_are_split_pattern(int c1, int c2)
         (c1 == '&' && c2 == '&');
 }
 
-static int try_extract_split_pattern(FILE *f,
+static int try_extract_split_pattern(char **line, char *l_base,
         struct line_traverse_state *state, struct word_list *words)
 { 
     int second_c;
@@ -77,30 +80,30 @@ static int try_extract_split_pattern(FILE *f,
     word_list_add_item(words, separator);
     word_list_add_letter_to_last(words, state->cur_c);
 
-    second_c = getc(f);
+    second_c = lgetc(line);
     if (two_chars_are_split_pattern(state->cur_c, second_c)) {
         state->cur_c = second_c;
         word_list_add_letter_to_last(words, state->cur_c);
     } else
-        ungetc(second_c, f);
+        lungetc(line, l_base, second_c);
 
     state->in_word = 0;
     state->ignore_spec = 0;
     return 1;
 }
 
-int tokenize_input_line_to_word_list(FILE *f, 
-        struct word_list **out_words, int *eol_char)
+int tokenize_input_line_to_word_list(char *line, struct word_list **out_words)
 {
     int status = 0;
+    char *linep = line;
     struct line_traverse_state state;
 
     *out_words = word_list_create();
 
     init_state(&state);
 
-    while (!char_is_eol((state.cur_c = getc(f)))) {
-        if (try_extract_split_pattern(f, &state, *out_words))
+    while (!char_is_eol((state.cur_c = lgetc(&linep)))) {
+        if (try_extract_split_pattern(&linep, line, &state, *out_words))
             continue;
         else if (cur_char_is_special(&state))
             process_spec_char(&state, *out_words);
@@ -120,10 +123,10 @@ int tokenize_input_line_to_word_list(FILE *f,
     if (state.mode != regular || state.ignore_spec)
         status = 1;
 
-    if (status == 0)
-        *eol_char = state.cur_c;
-    else
+    if (status != 0)
         word_list_free(*out_words);
+
+    free(line);
 
     return status;
 }

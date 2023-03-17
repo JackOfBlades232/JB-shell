@@ -42,4 +42,14 @@ Shell-V: (5_30, 5_31)
 * Reimplement bg launching
     * Make in_backdround a property of cmd chain
     * Remake wait cycle for non-bg commands
-- Split up, clean up and refactor command and execute_command
+* Split up, clean up and refactor command and execute_command
+
+Shell-edit: (5_36)
+- Implement line-input stage before tokenizer
+    - Add line input module (repurpose 5_35, no autocomp)
+    - Remake tokenizer to buffer parsing
+- Implement autocomplete
+    - Implement filename lookup
+    - Separate regular fs lookup and PATH lookup 
+- Add lookup type decision 
+    (?need to run tokenizer prematurely or process separators inplace?)

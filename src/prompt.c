@@ -1,18 +1,20 @@
 /* Toy-Shell/src/prompt.c */
 #include "prompt.h"
+#include "input.h"
 #include "line_tokenization.h"
 #include "word_list.h"
 #include "execute_command.h"
 #include "cmd_res.h"
 
 #include <stdio.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
 int run_command_prompt()
 {
+    char *line;
     struct word_list *words;
-    int eol_ch = 0;
     int token_res;
 
 #ifndef TOKENIZER_DEBUG
@@ -20,10 +22,17 @@ int run_command_prompt()
     set_up_process_control();
 #endif
 
-    while (eol_ch != EOF) {
-        printf("> ");
+    if (!isatty(0)) {
+        fprintf(stderr, "Not a terminal\n");
+        return -1;
+    }
 
-        token_res = tokenize_input_line_to_word_list(stdin, &words, &eol_ch);
+    for (;;) {
+        line = read_input_line();
+        if (line == NULL) /* EOF */
+            break; 
+
+        token_res = tokenize_input_line_to_word_list(line, &words);
         if (token_res != 0) {
             fprintf(stderr, "Invalid command\n");
             continue;
