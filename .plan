@@ -45,9 +45,9 @@ Shell-V: (5_30, 5_31)
 * Split up, clean up and refactor command and execute_command
 
 Shell-edit: (5_36)
-- Implement line-input stage before tokenizer
-    - Add line input module (repurpose 5_35, no autocomp)
-    - Remake tokenizer to buffer parsing
+* Implement line-input stage before tokenizer
+    * Add line input module (repurpose 5_35, no autocomp)
+    * Remake tokenizer to buffer parsing
 - Implement autocomplete
     - Implement filename lookup
     - Separate regular fs lookup and PATH lookup 
