@@ -175,6 +175,7 @@ int run_proc_group(struct command_chain *cmd_chain)
 gleader_deinit:
     if (pids != NULL)
         free_int_set(pids);
+    free_cmd_chain(cmd_chain);
     _exit(exit_code);
 }
             
@@ -207,6 +208,7 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
 
     /* create new group with intermediary g-leader proc and run command */
     pgid = run_proc_group(cmd_chain);
+    close_all_additional_descriptors(cmd_chain);
     if (pgid == -1) {
         res->type = failed;
         goto deinit;

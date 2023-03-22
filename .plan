@@ -61,4 +61,4 @@ Shell-VI:
 * Implement separate group for command (all procs in same group)
 * If command is not bg, impl setting it's group as current, once done -
     reset it's own
-- Check for bugs
+- Fix bug: now close additional descriptors in group leader, not in main proc
