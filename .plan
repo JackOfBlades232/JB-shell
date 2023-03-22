@@ -50,10 +50,14 @@ Shell-edit: (5_36)
     * Remake tokenizer to buffer parsing
 - Implement autocomplete
     - Implement 1-level (non-rec) PATH lookup (only x files)
+        * Implement lookup
+        - Test validity
+        - Deal with duplicate names being looked up
     - Implement fs recursive lookup
         - Impl abs path
         - Impl local path
         - Impl ~ user root path
+    - Implement completion
 - Add lookup type decision 
     (?need to run tokenizer prematurely or process separators inplace?)
 
