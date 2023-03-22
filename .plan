@@ -57,8 +57,8 @@ Shell-edit: (5_36)
 - Add lookup type decision 
     (?need to run tokenizer prematurely or process separators inplace?)
 
-Shell-VI:
+Shell-VI: (5_39)
 * Implement separate group for command (all procs in same group)
 * If command is not bg, impl setting it's group as current, once done -
     reset it's own
-- Fix bug: now close additional descriptors in group leader, not in main proc
+* Fix bug: now close additional descriptors in group leader, not in main proc
