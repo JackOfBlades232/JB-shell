@@ -62,3 +62,12 @@ Shell-VI: (5_39)
 * If command is not bg, impl setting it's group as current, once done -
     reset it's own
 * Fix bug: now close additional descriptors in group leader, not in main proc
+
+Shell-VII: (5_40)
+- Rename command chain to something referring to pipe and create command chain
+    entity that would be used to (conditionally) chain commands
+- Separate command interpreter from prompt (takes string, performs action)
+- Add &&, ||, ; chaining of commands
+- Add () for recursive calls to the command interpreter as proc
+- Reimplement & as a chain-level separator for launching first prog in bg
+    and second in fg
