@@ -93,29 +93,96 @@ static int execute_next_command(struct command_chain *cmd_chain)
 
 static int spawn_processes_for_all_commands(
         struct command_chain *cmd_chain,
-        struct int_set *pids)
+        struct int_set *pids,
+        int *last_proc_pid,
+        int is_bg
+        )
 {
     int pid;
-    int to_fill_pid_set = !cmd_chain_is_background(cmd_chain);
 
     while (!cmd_chain_is_empty(cmd_chain)) {
         pid = execute_next_command(cmd_chain);
         if (pid == -1)
             return 0;
 
-        if (to_fill_pid_set)
+        if (!is_bg) {
             int_set_add(pids, pid);
+            *last_proc_pid = pid;
+        }
     }
 
     return 1;
 }
+
+void set_group_to_fg(int pgid)
+{
+    signal(SIGTTOU, SIG_IGN); /* otherwise tcsetpgrp will freeze it */
+    tcsetpgrp(0, pgid);
+    signal(SIGTTOU, SIG_DFL);
+}
+
+int run_proc_group(struct command_chain *cmd_chain)
+{
+    int pid;
+    int status, wr;
+    int last_proc_pid = -1,
+        exit_code = 0;
+
+    int is_bg = cmd_chain_is_background(cmd_chain);
+    struct int_set *pids = NULL;
+
+    pid = fork();
+    if (pid != 0)
+        return pid;
+
+    /* spawn new group */
+    pid = getpid();
+    setpgid(pid, pid);
+
+    /* change cur pgroup if not a background proc */
+    if (!is_bg) {
+        set_group_to_fg(pid);
+        pids = create_int_set();
+    }
+
+    /* if not cd, spin up all procs in chain, and save their pids if non-bg */
+    spawn_processes_for_all_commands(cmd_chain, pids, &last_proc_pid, is_bg);
+
+    /* if running in background, skip the wait cycle */
+    if (is_bg) {
+        exit_code = 0;
+        goto gleader_deinit;
+    }
+
+    /* else, wait until all processes from the saved pids set finish */
+    signal(SIGCHLD, SIG_DFL); /* remove possible interrupting wait cycle */
+    while (!int_set_is_empty(pids)) {
+        wr = wait(&status);
+        if (wr == -1) {
+            exit_code = 1;
+            goto gleader_deinit;
+        } else if (wr == last_proc_pid) { /* save last proc in pipe res */
+            if (WIFEXITED(status))
+                exit_code = WEXITSTATUS(status);
+            else
+                exit_code = -1;
+        }
+
+        int_set_remove(pids, wr);
+    }
+    signal(SIGCHLD, chld_handler); /* restore handler */
+    
+gleader_deinit:
+    if (pids != NULL)
+        free_int_set(pids);
+    _exit(exit_code);
+}
             
 int execute_cmd(struct word_list *tokens, struct command_res *res)
 {
-    struct command_chain *cmd_chain;
-
-    struct int_set *pids = NULL;
+    int pgid;
     int status, wr;
+    struct command_chain *cmd_chain;
     
     /* return value != 0 only if empty cmd given */
     if (word_list_is_empty(tokens))
@@ -138,32 +205,33 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
         goto deinit;
     }
 
-    /* if not cd, spin up all procs in chain, and save their pids if non-bg */
-    pids = create_int_set();
-    spawn_processes_for_all_commands(cmd_chain, pids);
+    /* create new group with intermediary g-leader proc and run command */
+    pgid = run_proc_group(cmd_chain);
+    if (pgid == -1) {
+        res->type = failed;
+        goto deinit;
+    }
 
-    /* if running in background, skip the wait cycle */
+    /* if running in background, skip the wait */
     if (cmd_chain_is_background(cmd_chain)) {
         res->type = noproc;
         goto deinit;
     }
 
-    /* else, wait until all processes from the saved pids set finish */
+    /* else, wait for group leader (who waits for everybody else) */
     signal(SIGCHLD, SIG_DFL); /* remove possible interrupting wait cycle */
-    while (!int_set_is_empty(pids)) {
+    for (;;) {
         wr = wait(&status);
-        if (wr == -1) {
-            res->type = failed;
-            goto deinit;
-        }
-
-        int_set_remove(pids, wr);
+        if (wr == -1 || wr == pgid)
+            break;
     }
     signal(SIGCHLD, chld_handler); /* restore handler */
+    set_group_to_fg(getpgid(getpid()));
 
-    /* save off last terminated process result, for sake of simplicity
-     * (so, it is not currently possible to adequately parse a pipe result) */
-    if (WIFEXITED(status)) {
+    /* parse result to res struct */
+    if (wr == -1)
+        res->type = noproc;
+    else if (WIFEXITED(status)) {
         res->type = exited;
         res->code = WEXITSTATUS(status);
     } else {
@@ -172,8 +240,6 @@ int execute_cmd(struct word_list *tokens, struct command_res *res)
     }
 
 deinit:
-    if (pids != NULL)
-        free_int_set(pids);
     if (cmd_chain != NULL)
         free_cmd_chain(cmd_chain);
     return 0;
