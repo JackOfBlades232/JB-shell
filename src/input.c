@@ -161,116 +161,6 @@ static void rm_word(struct positional_buffer *pbuf)
     redraw_buf(pbuf->bufpos, rm_shift);
 }
 
-/* static void output_to_eol(FILE *f, struct positional_buffer *pbuf)
-{
-    int c;
-    while ((c = fgetc(f)) != EOF) {
-        if (c == '\n')
-            break;
-
-        if (pbuf != NULL)
-            add_char(pbuf, c);
-        else
-            putchar(c);
-    }
-}
-
-static size_t look_up_word_by_prefix(FILE *dict, 
-        const char *prefix, size_t prefix_len,
-        long (*match_positions)[match_bufsize], long *last_match_end)
-{
-    int c;
-    int line_may_match;
-    const char *prefix_p = prefix;
-
-    size_t num_matches = 0;
-   
-    fseek(dict, 0, SEEK_SET);
-
-    line_may_match = 1;
-    **match_positions = ftell(dict);
-    *last_match_end = -1;
-    while ((c = fgetc(dict)) != EOF) {
-        if (line_may_match && prefix_p-prefix >= prefix_len) {
-            if (num_matches < match_bufsize-1) {
-                *last_match_end = ftell(dict)-1;
-                num_matches++;
-            } else
-                return -1;
-            
-            line_may_match = 0;
-        } 
-
-        if (c == '\n') {
-            prefix_p = prefix;
-            line_may_match = 1;
-            (*match_positions)[num_matches] = ftell(dict);
-        } else if (line_may_match) {
-            if (c == *prefix_p)
-                prefix_p++;
-            else
-                line_may_match = 0;
-        }
-    }
-
-    return num_matches;
-}
-
-static void complete_word(long dict_pos, FILE *dict_f,
-        struct positional_buffer *pbuf)
-{
-    fseek(dict_f, dict_pos, SEEK_SET);
-    output_to_eol(dict_f, pbuf);
-}
-
-static void output_multiple_matches(long *matches, size_t match_cnt, 
-        FILE *dict_f, struct positional_buffer *pbuf)
-{
-    int i;
-    putchar('\n');
-    for (i = 0; i < match_cnt; i++) {
-        fseek(dict_f, matches[i], SEEK_SET);
-        output_to_eol(dict_f, NULL);
-        putchar(' ');
-    }
-    putchar('\n');
-    printf("%s", pbuf->buf);
-    for (i = 0; i < pbuf->bufend - pbuf->bufpos; i++)
-        putchar('\b');
-}
-
-static void perform_lookup(struct positional_buffer *pbuf, FILE *dict_f)
-{
-    char *prefix = pbuf->bufpos;
-    size_t prefix_len;
-
-    size_t match_cnt;
-    long match_positions[match_bufsize];
-    long last_match_end;
-
-    while (prefix - pbuf->buf > 0) {
-        prefix--;
-        if (char_is_separator(*prefix)) {
-            prefix++;
-            break;
-        }
-    }
-
-    prefix_len = pbuf->bufpos - prefix;
-    match_cnt = look_up_word_by_prefix(
-            dict_f, prefix, prefix_len,
-            &match_positions, &last_match_end
-            );
-
-    if (match_cnt == -1)
-        putstr_now("\nToo many options to display\n");
-    else if (match_cnt == 1)
-        complete_word(last_match_end, dict_f, pbuf);
-    else if (match_cnt > 1)
-        output_multiple_matches(match_positions, match_cnt, dict_f, pbuf);
-}
-*/
-
 static void add_char_with_esc(
         struct positional_buffer *out_pbuf, char c, int *acc_esc)
 {
@@ -339,7 +229,10 @@ static char *parse_input()
                     putchar_now('\n');
                     goto end_of_file;
                 case '\t':
-                    /* perform_lookup(&out_pbuf, dict_f); */
+                    /* decide path or recursive lookup */
+                    /* extract prefix */
+                    /* word = perform_lookup(prefix);
+                    insert_word(&out_pbuf, word) */
                     break;
                 case '\b':
                     rm_char(&out_pbuf);
