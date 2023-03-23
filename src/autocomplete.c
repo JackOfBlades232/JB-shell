@@ -11,11 +11,52 @@ enum { max_items_in_line = 6 };
 
 enum query_type { invalid, path_executable, file };
 
+int char_is_single_prog_sep(char c)
+{
+    return c == '|' || c == '&' || c == '(' || c == ')' || c == ';';
+}
+
+int is_end_of_prog_separator(const char *bufpos, const char *buf)
+{
+    if (bufpos-buf <= 0)
+        return 0;
+    else
+        return char_is_single_prog_sep(*bufpos);
+}
+
+int char_is_single_file_sep(char c)
+{
+    return c == '<' || c == '>';
+}
+
+int is_end_of_file_separator(const char *bufpos, const char *buf)
+{
+    if (bufpos-buf <= 0)
+        return 0;
+    else 
+        return char_is_single_file_sep(*bufpos);
+}
+
+int is_end_of_any_separator(const char *bufpos, const char *buf)
+{
+    return char_is_separator(*bufpos) ||
+        is_end_of_prog_separator(bufpos, buf) ||
+        is_end_of_file_separator(bufpos, buf);
+}
+
+int can_complete_here(struct positional_buffer *out_pbuf)
+{
+    return out_pbuf->bufpos > out_pbuf->buf &&
+        !is_end_of_any_separator(out_pbuf->bufpos-1, out_pbuf->buf) &&
+        (
+         out_pbuf->bufpos == out_pbuf->bufend || 
+         is_end_of_any_separator(out_pbuf->bufpos, out_pbuf->buf)
+        ); 
+}
+
 enum query_type check_autocomplete_type(struct positional_buffer *out_pbuf)
 {
-    /* now, can autocomplete in word */
-    if (out_pbuf->bufpos == out_pbuf->buf ||
-            char_is_separator(*(out_pbuf->bufpos-1)))
+    if (!can_complete_here(out_pbuf))
         return invalid;
 
     /* TODO: remake to last separator cheking */
@@ -28,11 +69,12 @@ char *get_autocomplete_prefix_copy(struct positional_buffer *out_pbuf)
     char *prefix_copy;
     char *buf_ptr = out_pbuf->bufpos - 1;
 
-    while (buf_ptr - out_pbuf->buf > 0 && !char_is_separator(*buf_ptr)) {
+    while (buf_ptr - out_pbuf->buf > 0 &&
+            !is_end_of_any_separator(buf_ptr, out_pbuf->buf)) {
         buf_ptr--;
         len++;
     }
-    if (char_is_separator(*buf_ptr))
+    if (is_end_of_any_separator(buf_ptr, out_pbuf->buf))
         buf_ptr++;
     else
         len++;
