@@ -49,17 +49,18 @@ Shell-edit: (5_36)
     * Add line input module (repurpose 5_35, no autocomp)
     * Remake tokenizer to buffer parsing
 - Implement autocomplete
-    - Implement 1-level (non-rec) PATH lookup (only x files)
+    * Implement 1-level (non-rec) PATH lookup (only x files)
         * Implement lookup
-        - Test validity
-        - Deal with duplicate names being looked up
-    - Implement fs recursive lookup
-        - Impl abs path
-        - Impl local path
-        - Impl ~ user root path
-    - Implement completion
-- Add lookup type decision 
-    (?need to run tokenizer prematurely or process separators inplace?)
+        * Test validity
+        * Deal with duplicate names being looked up
+    * Implement fs lookup
+        * Implement prefix dirent search 
+            * Init: if /, root, ~ - home, else stay;
+            * Step: try to find the word till next /
+        * Then, use same funcs as with path to parse dir
+    * Add constraint for only executables in PATH search
+    - Implement completion in string (without choice)
+- Add lookup type decision (?)
 
 Shell-VI: (5_39)
 * Implement separate group for command (all procs in same group)

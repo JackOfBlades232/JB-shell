@@ -1,6 +1,8 @@
 /* Toy-Shell/src/lookup.c */
 #include "lookup.h"
 
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,47 +36,75 @@ char *replace_dots_with_zero_char(char *str)
         return NULL;
 }
 
+int file_is_executable(const char *dirname, const char *filename)
+{
+    int res;
+
+    struct stat st;
+    int stat_res;
+
+    size_t dirnm_len = strlen(dirname),
+           filenm_len = strlen(filename);
+    char *full_filename = malloc(dirnm_len+filenm_len+2);
+
+    strncpy(full_filename, dirname, dirnm_len);
+    full_filename[dirnm_len] = '/';
+    strncpy(full_filename+dirnm_len+1, filename, filenm_len);
+    full_filename[dirnm_len+filenm_len+1] = '\0';
+
+    stat_res = stat(full_filename, &st);
+    if (stat_res == -1) {
+        res = 0;
+        goto deinit;
+    }
+
+    res = S_ISREG(st.st_mode) &&
+        ((st.st_mode & 0111) != 0); /* at least one of x bits is 1 */
+
+deinit:
+    free(full_filename);
+    return res;
+}
+
 int match_prefix_with_names_in_dir(
         char *dirname, const char *prefix,
-        char ***result_next_ptr, char **result
+        struct string_set *query_res_set,
+        int is_path
         )
 {
+    int res;
+
     DIR *dir;
     struct dirent *dent;
 
-    int match_cnt;
-
-    char *dots_ptr;
+    char *dots_ptr = NULL; 
 
     /* trick for looking up from path with no allocations */
-    dots_ptr = replace_dots_with_zero_char(dirname);
+    if (is_path)
+        dots_ptr = replace_dots_with_zero_char(dirname);
 
     dir = opendir(dirname);
-    if (dots_ptr) /* restore dots */
-        *dots_ptr = ':';
-    if (!dir)
-        return -1;
+    if (!dir) {
+        res = 0;
+        goto deinit;
+    }
 
-    match_cnt = 0;
     while ((dent = readdir(dir)) != NULL) {
         if (
                 dent->d_type == DT_REG &&
-                name_matches_prefix(dent->d_name, prefix)
+                name_matches_prefix(dent->d_name, prefix) &&
+                (!is_path || file_is_executable(dirname, dent->d_name))
            ) {
-            int mem_len;
-            if (*result_next_ptr-result >= max_query_size)
-                return max_query_size+1;
-
-            mem_len = strlen(dent->d_name);
-            **result_next_ptr = malloc(mem_len+1);
-            strncpy(**result_next_ptr, dent->d_name, mem_len);
-            (*result_next_ptr)++;
-            **result_next_ptr = NULL;
-            match_cnt++;
+            string_set_add(query_res_set, dent->d_name);
         }
     }
 
-    return match_cnt;
+    res = 1;
+
+deinit:
+    if (dots_ptr) /* restore dots */
+        *dots_ptr = ':';
+    return res;
 }
 
 void advance_path_pointer(char **path_p)
@@ -89,37 +119,74 @@ void advance_path_pointer(char **path_p)
     (*path_p)++;
 } 
 
-char *perform_path_lookup(const char *prefix)
+void assign_query_result_type(struct query_result *q_res)
+{
+    int set_size = string_set_size(q_res->set);
+
+    if (set_size == 0) {
+        q_res->type = not_found;
+        free_string_set(q_res->set);
+    } else if (set_size == 1)
+        q_res->type = single;
+    else if (set_size <= max_query_size)
+        q_res->type = multiple;
+    else
+        q_res->type = too_many;
+}
+
+struct query_result perform_path_lookup(const char *prefix)
 {
     char *path;
-    char **result = malloc((max_query_size+1) * sizeof(char *)),
-        **result_next_p = result;
-
-    int match_cnt;
+    struct query_result q_res;
     
-    *result = NULL;
+    q_res.set = create_string_set();
+
     for (path = getenv("PATH"); *path; advance_path_pointer(&path)) {
-        match_cnt = match_prefix_with_names_in_dir(
-                path, prefix, &result_next_p, result
-                );
-        if (match_cnt > max_query_size)
+        match_prefix_with_names_in_dir(path, prefix, q_res.set, 1);
+        if (string_set_size(q_res.set) > max_query_size)
             break;
     }
 
-    if (match_cnt <= max_query_size) {
-        for (result_next_p = result; *result_next_p; result_next_p++) {
-            puts(*result_next_p);
-            free(*result_next_p);
-        }
-    } else
-        printf("Too many matches\n");
-
-    free(result);
-
-    return NULL;
+    assign_query_result_type(&q_res);
+    return q_res;
 }
 
-char *perform_fs_lookup(const char *prefix)
+char *try_replace_last_slash_with_zero(char *filepath)
 {
-    return NULL;
+    char *fpp;
+    for (fpp = filepath; *fpp; fpp++)
+        {}
+    while (fpp-filepath > 0 && *fpp != '/')
+        fpp--;
+    if (*fpp != '/')
+        return filepath;
+    *fpp = '\0';
+    return fpp + 1;
+}
+
+struct query_result perform_fs_lookup(const char *prefix)
+{
+    /* refac? */
+    char *mut_prefix = (char *) prefix;
+    char *filenm_prefix;
+    filenm_prefix = try_replace_last_slash_with_zero(mut_prefix);
+
+    struct query_result q_res;
+    q_res.set = create_string_set();
+
+    if (filenm_prefix == mut_prefix)
+        match_prefix_with_names_in_dir("./", filenm_prefix, q_res.set, 0);        
+    else {
+        match_prefix_with_names_in_dir(mut_prefix, filenm_prefix, q_res.set, 0);        
+        filenm_prefix--;
+        *filenm_prefix = '/';
+    }
+
+    assign_query_result_type(&q_res);
+    return q_res;
+}
+
+void free_query_result_mem(struct query_result *q_res)
+{
+    free_string_set(q_res->set);
 }
