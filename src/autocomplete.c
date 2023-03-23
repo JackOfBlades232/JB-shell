@@ -11,56 +11,58 @@ enum { max_items_in_line = 6 };
 
 enum query_type { invalid, path_executable, file };
 
-int char_is_single_prog_sep(char c)
+int is_end_of_prog_separator(char c)
 {
     return c == '|' || c == '&' || c == '(' || c == ')' || c == ';';
 }
 
-int is_end_of_prog_separator(const char *bufpos, const char *buf)
-{
-    if (bufpos-buf <= 0)
-        return 0;
-    else
-        return char_is_single_prog_sep(*bufpos);
-}
-
-int char_is_single_file_sep(char c)
+int is_end_of_file_separator(char c)
 {
     return c == '<' || c == '>';
 }
 
-int is_end_of_file_separator(const char *bufpos, const char *buf)
+int is_end_of_any_separator(char c)
 {
-    if (bufpos-buf <= 0)
-        return 0;
-    else 
-        return char_is_single_file_sep(*bufpos);
-}
-
-int is_end_of_any_separator(const char *bufpos, const char *buf)
-{
-    return char_is_separator(*bufpos) ||
-        is_end_of_prog_separator(bufpos, buf) ||
-        is_end_of_file_separator(bufpos, buf);
+    return char_is_separator(c) ||
+        is_end_of_prog_separator(c) ||
+        is_end_of_file_separator(c);
 }
 
 int can_complete_here(struct positional_buffer *out_pbuf)
 {
     return out_pbuf->bufpos > out_pbuf->buf &&
-        !is_end_of_any_separator(out_pbuf->bufpos-1, out_pbuf->buf) &&
+        !is_end_of_any_separator(*(out_pbuf->bufpos-1)) &&
         (
          out_pbuf->bufpos == out_pbuf->bufend || 
-         is_end_of_any_separator(out_pbuf->bufpos, out_pbuf->buf)
+         is_end_of_any_separator(*out_pbuf->bufpos)
         ); 
 }
 
 enum query_type check_autocomplete_type(struct positional_buffer *out_pbuf)
 {
+    char *buf_ptr;
     if (!can_complete_here(out_pbuf))
         return invalid;
 
-    /* TODO: remake to last separator cheking */
-    return path_executable;
+    buf_ptr = out_pbuf->bufpos - 1;
+    while (buf_ptr - out_pbuf->buf > 0 && 
+            !is_end_of_any_separator(*buf_ptr))
+        buf_ptr--;
+
+    if (buf_ptr == out_pbuf->buf || 
+            is_end_of_prog_separator(*buf_ptr))
+        return path_executable;
+    else if (is_end_of_file_separator(*buf_ptr))
+        return file;
+
+    while (buf_ptr - out_pbuf->buf > 0 && char_is_separator(*buf_ptr))
+        buf_ptr--;
+
+    if (buf_ptr == out_pbuf->buf || 
+            is_end_of_prog_separator(*buf_ptr))
+        return path_executable;
+    else
+        return file;
 }
 
 char *get_autocomplete_prefix_copy(struct positional_buffer *out_pbuf)
@@ -70,11 +72,11 @@ char *get_autocomplete_prefix_copy(struct positional_buffer *out_pbuf)
     char *buf_ptr = out_pbuf->bufpos - 1;
 
     while (buf_ptr - out_pbuf->buf > 0 &&
-            !is_end_of_any_separator(buf_ptr, out_pbuf->buf)) {
+            !is_end_of_any_separator(*buf_ptr)) {
         buf_ptr--;
         len++;
     }
-    if (is_end_of_any_separator(buf_ptr, out_pbuf->buf))
+    if (is_end_of_any_separator(*buf_ptr))
         buf_ptr++;
     else
         len++;

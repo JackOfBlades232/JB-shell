@@ -48,7 +48,7 @@ Shell-edit: (5_36)
 * Implement line-input stage before tokenizer
     * Add line input module (repurpose 5_35, no autocomp)
     * Remake tokenizer to buffer parsing
-- Implement autocomplete
+* Implement autocomplete
     * Implement 1-level (non-rec) PATH lookup (only x files)
         * Implement lookup
         * Test validity
@@ -59,8 +59,10 @@ Shell-edit: (5_36)
             * Step: try to find the word till next /
         * Then, use same funcs as with path to parse dir
     * Add constraint for only executables in PATH search
-    - Implement completion in string (without choice)
-- Add lookup type decision (?)
+    * Implement completion in string (without choice)
+* Add lookup type decision
+- Add any type file name autocompletion for fs
+    - (Add slash for directories, devices and others that need a slash)
 
 Shell-VI: (5_39)
 * Implement separate group for command (all procs in same group)
