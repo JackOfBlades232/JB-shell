@@ -1,7 +1,7 @@
 /* Toy-Shell/src/input.c */
 #include "input.h"
+#include "autocomplete.h"
 
-#include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -21,10 +21,10 @@ enum {
 
 enum arrow_type { left, right, invalid };
 
-struct positional_buffer {
-    char *buf, *bufpos, *bufend;
-    size_t bufsize;
-};
+int char_is_separator(int c)
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
 
 static void putchar_now(int c)
 {
@@ -36,11 +36,6 @@ static void putstr_now(const char *s)
 {
     printf("%s", s);
     fflush(stdout);
-}
-
-static int char_is_separator(int c)
-{
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
 static void reset_buf(struct positional_buffer *pbuf)
@@ -90,6 +85,28 @@ static size_t remove_char_from_buf(struct positional_buffer *pbuf)
     pbuf->bufpos--;
     pbuf->bufend--;
     return res;
+}
+
+static size_t add_word_to_buf(struct positional_buffer *pbuf, const char *word)
+{
+    char *shift_p;
+    size_t shift = strlen(word);
+
+    if (pbuf->bufend - pbuf->buf >= pbuf->bufsize - shift)
+        return -1;
+
+    shift_p = pbuf->bufend;
+    for (; shift_p - pbuf->bufpos >= 0; shift_p--)
+        *(shift_p+shift) = *shift_p;
+
+    for (; *word; word++) {
+        *(pbuf->bufpos) = *word;
+        pbuf->bufpos++;
+    }
+    
+    pbuf->bufend += shift;
+
+    return shift;
 }
 
 static size_t remove_word_from_buf(struct positional_buffer *pbuf)
@@ -147,6 +164,17 @@ static void rm_char(struct positional_buffer *pbuf)
 
     putchar('\b');
     redraw_buf(pbuf->bufpos, 1);
+}
+
+void add_word(struct positional_buffer *pbuf, const char *word)
+{
+    size_t add_shift = add_word_to_buf(pbuf, word);
+    if (add_shift == -1)
+        return;
+
+    printf("%s", word);
+    if (pbuf->bufpos != pbuf->bufend)
+        redraw_buf(pbuf->bufpos, 0);
 }
 
 static void rm_word(struct positional_buffer *pbuf)
@@ -229,10 +257,7 @@ static char *parse_input()
                     putchar_now('\n');
                     goto end_of_file;
                 case '\t':
-                    /* decide path or recursive lookup */
-                    /* extract prefix */
-                    /* word = perform_lookup(prefix);
-                    insert_word(&out_pbuf, word) */
+                    try_autocomplete(&out_pbuf);
                     break;
                 case '\b':
                     rm_char(&out_pbuf);
@@ -308,4 +333,12 @@ void lungetc(char **line, char *l_base, char c)
         (*line)--;
         **line = c;
     }
+}
+
+void redraw_full_buf(struct positional_buffer *pbuf)
+{
+    size_t i;
+    printf("> %s", pbuf->buf);
+    for (i = 0; i < pbuf->bufend - pbuf->bufpos; i++)
+        putchar('\b');
 }

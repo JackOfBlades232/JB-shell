@@ -12,7 +12,7 @@
 
 extern char **environ;
 
-enum { max_query_size = 64 };
+enum { max_query_size = 32 };
 
 int name_matches_prefix(const char *name, const char *prefix)
 {
@@ -189,4 +189,5 @@ struct query_result perform_fs_lookup(const char *prefix)
 void free_query_result_mem(struct query_result *q_res)
 {
     free_string_set(q_res->set);
+    q_res->set = NULL;
 }
