@@ -62,7 +62,8 @@ Shell-edit: (5_36)
     * Implement completion in string (without choice)
 * Add lookup type decision
 - Add any type file name autocompletion for fs
-    - (Add slash for directories, devices and others that need a slash)
+    * (Add slash for directories, devices and others that need a slash)
+    - Fix autocompletion when not first dir in name
 
 Shell-VI: (5_39)
 * Implement separate group for command (all procs in same group)

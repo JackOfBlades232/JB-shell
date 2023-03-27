@@ -1,5 +1,6 @@
 /* Toy-Shell/src/lookup.c */
 #include "lookup.h"
+#include "string_set.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -66,6 +67,27 @@ deinit:
     return res;
 }
 
+void add_query_res_to_set(struct string_set *res_set, char *res,
+        unsigned char res_type)
+{
+    char *n_res;
+    size_t n_res_len;
+    if (res_type != DT_DIR) {
+        string_set_add(res_set, res);
+        return;
+    }
+
+    /* add slash for directory lookups */
+    n_res_len = strlen(res)+1;
+    n_res = malloc(n_res_len+1);
+    strncpy(n_res, res, n_res_len-1);
+    n_res[n_res_len-1] = '/';
+    n_res_len[n_res] = '\0';
+    
+    string_set_add(res_set, n_res);
+    free(n_res);
+}
+
 int match_prefix_with_names_in_dir(
         char *dirname, const char *prefix,
         struct string_set *query_res_set,
@@ -91,17 +113,17 @@ int match_prefix_with_names_in_dir(
 
     while ((dent = readdir(dir)) != NULL) {
         if (
-                dent->d_type == DT_REG &&
                 name_matches_prefix(dent->d_name, prefix) &&
                 (!is_path || file_is_executable(dirname, dent->d_name))
            ) {
-            string_set_add(query_res_set, dent->d_name);
+            add_query_res_to_set(query_res_set, dent->d_name, dent->d_type);
         }
     }
 
     res = 1;
 
 deinit:
+    closedir(dir);
     if (dots_ptr) /* restore dots */
         *dots_ptr = ':';
     return res;
