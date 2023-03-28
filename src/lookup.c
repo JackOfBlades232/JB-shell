@@ -173,38 +173,48 @@ struct query_result perform_path_lookup(const char *prefix)
     return q_res;
 }
 
-char *try_replace_last_slash_with_zero(char *filepath)
+static void split_filepath(char *filepath, char **dir, char **file)
 {
     char *fpp;
     for (fpp = filepath; *fpp; fpp++)
         {}
     while (fpp-filepath > 0 && *fpp != '/')
         fpp--;
-    if (*fpp != '/')
-        return filepath;
-    *fpp = '\0';
-    return fpp + 1;
+    if (*fpp != '/') {
+        *file = filepath;
+        *dir = NULL;
+    } else {
+        char char_bkup;
+        fpp++;
+        char_bkup = *fpp;
+        *fpp = '\0';
+        *dir = strdup(filepath);
+        *fpp = char_bkup;
+        *file = fpp;
+    }
 }
 
 struct query_result perform_fs_lookup(const char *prefix)
 {
     /* refac? */
-    char *mut_prefix = (char *) prefix;
-    char *filenm_prefix;
-    filenm_prefix = try_replace_last_slash_with_zero(mut_prefix);
+    char *dirnm, *filenm_prefix;
+    split_filepath((char *) prefix, &dirnm, &filenm_prefix);
 
     struct query_result q_res;
     q_res.set = create_string_set();
 
-    if (filenm_prefix == mut_prefix)
+    if (!dirnm)
         match_prefix_with_names_in_dir("./", filenm_prefix, q_res.set, 0);        
     else {
-        match_prefix_with_names_in_dir(mut_prefix, filenm_prefix, q_res.set, 0);        
+        match_prefix_with_names_in_dir(dirnm, filenm_prefix, q_res.set, 0);        
         filenm_prefix--;
         *filenm_prefix = '/';
     }
 
     assign_query_result_type(&q_res);
+
+    if (dirnm)
+        free(dirnm);
     return q_res;
 }
 
