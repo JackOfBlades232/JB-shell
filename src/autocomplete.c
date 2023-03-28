@@ -88,12 +88,27 @@ char *get_autocomplete_prefix_copy(struct positional_buffer *out_pbuf)
     return prefix_copy;
 }
 
+size_t prefix_without_dir_len(const char *prefix)
+{
+    size_t len = 0;
+    for (; *prefix; prefix++) {
+        if (*prefix == '/')
+            len = 0;
+        else
+            len++;
+    }
+    
+    return len;
+}
+
 char *item_suffix(char *item, const char *prefix)
 {
     char *suf = item;
     size_t i;
+    
+    /* @Bug: dirname is in prefix, not in item */
 
-    for (i = 0; i < strlen(prefix); i++)
+    for (i = 0; i < prefix_without_dir_len(prefix); i++)
         suf++;
 
     return suf;
@@ -173,11 +188,6 @@ void try_autocomplete(struct positional_buffer *out_pbuf)
         q_res = perform_path_lookup(prefix_copy);
     else
         q_res = perform_fs_lookup(prefix_copy);
-
-    if (q_res.type == not_found) {
-        printf("Not found\n");
-        exit(0);
-    }
 
     switch (q_res.type) {
         case not_found:

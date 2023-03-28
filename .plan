@@ -61,12 +61,11 @@ Shell-edit: (5_36)
     * Add constraint for only executables in PATH search
     * Implement completion in string (without choice)
 * Add lookup type decision
-- Add any type file name autocompletion for fs
+* Add any type file name autocompletion for fs
     * (Add slash for directories, devices and others that need a slash)
-    - Fix autocompletion when not first dir in name
-        - Note 1: lookup is allright, prefix copy -- too, then autocompletion
-            f-s up the string and screen.
-        - Bug: cat't lookup in /
+    * Fix autocompletion when not first dir in name
+        * Bug: cat't lookup in /
+        * Nested dir autocompletion is buggy, fucks up buf on single
 
 Shell-VI: (5_39)
 * Implement separate group for command (all procs in same group)
