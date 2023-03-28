@@ -168,10 +168,16 @@ void try_autocomplete(struct positional_buffer *out_pbuf)
         return;
 
     prefix_copy = get_autocomplete_prefix_copy(out_pbuf);
+
     if (q_type == path_executable)
         q_res = perform_path_lookup(prefix_copy);
     else
         q_res = perform_fs_lookup(prefix_copy);
+
+    if (q_res.type == not_found) {
+        printf("Not found\n");
+        exit(0);
+    }
 
     switch (q_res.type) {
         case not_found:
