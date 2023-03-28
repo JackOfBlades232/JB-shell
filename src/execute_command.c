@@ -114,14 +114,14 @@ static int spawn_processes_for_all_commands(
     return 1;
 }
 
-void set_group_to_fg(int pgid)
+static void set_group_to_fg(int pgid)
 {
     signal(SIGTTOU, SIG_IGN); /* otherwise tcsetpgrp will freeze it */
     tcsetpgrp(0, pgid);
     signal(SIGTTOU, SIG_DFL);
 }
 
-int run_proc_group(struct command_chain *cmd_chain)
+static int run_proc_group(struct command_chain *cmd_chain)
 {
     int pid;
     int status, wr;

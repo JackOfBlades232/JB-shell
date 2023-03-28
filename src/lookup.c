@@ -15,7 +15,7 @@ extern char **environ;
 
 enum { max_query_size = 32 };
 
-int name_matches_prefix(const char *name, const char *prefix)
+static int name_matches_prefix(const char *name, const char *prefix)
 {
     for (; *name; name++) {
         if (*prefix == '\0' || *prefix != *name)
@@ -26,7 +26,7 @@ int name_matches_prefix(const char *name, const char *prefix)
     return *prefix == '\0';
 }
 
-char *replace_dots_with_zero_char(char *str)
+static char *replace_dots_with_zero_char(char *str)
 {
     while (*str && *str != ':')
         str++;
@@ -37,7 +37,7 @@ char *replace_dots_with_zero_char(char *str)
         return NULL;
 }
 
-int file_is_executable(const char *dirname, const char *filename)
+static int file_is_executable(const char *dirname, const char *filename)
 {
     int res;
 
@@ -67,7 +67,7 @@ deinit:
     return res;
 }
 
-void add_query_res_to_set(struct string_set *res_set, char *res,
+static void add_query_res_to_set(struct string_set *res_set, char *res,
         unsigned char res_type)
 {
     char *n_res;
@@ -88,7 +88,7 @@ void add_query_res_to_set(struct string_set *res_set, char *res,
     free(n_res);
 }
 
-int match_prefix_with_names_in_dir(
+static int match_prefix_with_names_in_dir(
         char *dirname, const char *prefix,
         struct string_set *query_res_set,
         int is_path
@@ -129,7 +129,7 @@ deinit:
     return res;
 }
 
-void advance_path_pointer(char **path_p)
+static void advance_path_pointer(char **path_p)
 {
     while (**path_p != ':') {
         if (**path_p == '\0')
@@ -141,7 +141,7 @@ void advance_path_pointer(char **path_p)
     (*path_p)++;
 } 
 
-void assign_query_result_type(struct query_result *q_res)
+static void assign_query_result_type(struct query_result *q_res)
 {
     int set_size = string_set_size(q_res->set);
 

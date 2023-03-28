@@ -11,24 +11,24 @@ enum { max_items_in_line = 6 };
 
 enum query_type { invalid, path_executable, file };
 
-int is_end_of_prog_separator(char c)
+static int is_end_of_prog_separator(char c)
 {
     return c == '|' || c == '&' || c == '(' || c == ')' || c == ';';
 }
 
-int is_end_of_file_separator(char c)
+static int is_end_of_file_separator(char c)
 {
     return c == '<' || c == '>';
 }
 
-int is_end_of_any_separator(char c)
+static int is_end_of_any_separator(char c)
 {
     return char_is_separator(c) ||
         is_end_of_prog_separator(c) ||
         is_end_of_file_separator(c);
 }
 
-int can_complete_here(struct positional_buffer *out_pbuf)
+static int can_complete_here(struct positional_buffer *out_pbuf)
 {
     return out_pbuf->bufpos > out_pbuf->buf &&
         !is_end_of_any_separator(*(out_pbuf->bufpos-1)) &&
@@ -38,7 +38,8 @@ int can_complete_here(struct positional_buffer *out_pbuf)
         ); 
 }
 
-enum query_type check_autocomplete_type(struct positional_buffer *out_pbuf)
+static enum query_type check_autocomplete_type(
+        struct positional_buffer *out_pbuf)
 {
     char *buf_ptr;
     if (!can_complete_here(out_pbuf))
@@ -65,7 +66,7 @@ enum query_type check_autocomplete_type(struct positional_buffer *out_pbuf)
         return file;
 }
 
-char *get_autocomplete_prefix_copy(struct positional_buffer *out_pbuf)
+static char *get_autocomplete_prefix_copy(struct positional_buffer *out_pbuf)
 {
     size_t len = 0;
     char *prefix_copy;
@@ -88,7 +89,7 @@ char *get_autocomplete_prefix_copy(struct positional_buffer *out_pbuf)
     return prefix_copy;
 }
 
-size_t prefix_without_dir_len(const char *prefix)
+static size_t prefix_without_dir_len(const char *prefix)
 {
     size_t len = 0;
     for (; *prefix; prefix++) {
@@ -101,12 +102,10 @@ size_t prefix_without_dir_len(const char *prefix)
     return len;
 }
 
-char *item_suffix(char *item, const char *prefix)
+static char *item_suffix(char *item, const char *prefix)
 {
     char *suf = item;
     size_t i;
-    
-    /* @Bug: dirname is in prefix, not in item */
 
     for (i = 0; i < prefix_without_dir_len(prefix); i++)
         suf++;
@@ -114,7 +113,7 @@ char *item_suffix(char *item, const char *prefix)
     return suf;
 }
 
-void complete_single_item(struct positional_buffer *out_pbuf, 
+static void complete_single_item(struct positional_buffer *out_pbuf, 
         struct string_set *item_set, const char *prefix)
 {
     char *item = string_set_pop_any(item_set);
@@ -125,7 +124,7 @@ void complete_single_item(struct positional_buffer *out_pbuf,
     free(item);
 }
 
-void display_multiple_options(struct positional_buffer *out_pbuf, 
+static void display_multiple_options(struct positional_buffer *out_pbuf, 
         struct string_set *item_set)
 {
     const char *buf_ptr = out_pbuf->bufpos;
@@ -158,7 +157,7 @@ void display_multiple_options(struct positional_buffer *out_pbuf,
     fflush(stdout);
 }
 
-void display_too_many_options_msg(struct positional_buffer *out_pbuf)
+static void display_too_many_options_msg(struct positional_buffer *out_pbuf)
 {
     const char *buf_ptr = out_pbuf->bufpos;
     while (*buf_ptr) {
