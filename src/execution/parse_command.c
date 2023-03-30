@@ -1,5 +1,8 @@
 /* Toy-Shell/src/execution/parse_command.c */
 #include "parse_command.h"
+#include "cmd_pipe.h"
+#include "command.h"
+#include "pipe_seq.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -94,6 +97,11 @@ static int process_end_separator(
 {
     int res = 0;
 
+    if (cmd_pipe_is_empty(cmd_pipe)) {
+        word_free(w);
+        return 0;
+    }
+
     if (strcmp(w->content, "&") == 0) {
         set_cmd_pipe_to_background(cmd_pipe);
         res = word_list_is_empty(remaining_tokens);
@@ -142,10 +150,14 @@ static int process_inter_cmd_separator(
         struct command_pipe *cmd_pipe,
         struct word_list *remaining_tokens)
 {
-    int res = 0;
+    int res;
 
     if (strcmp(w->content, "|") == 0)
         res = try_add_cmd_to_pipe(cmd_pipe);
+    else if (strcmp(w->content, "(") == 0)
+        res = -1;
+    else if (strcmp(w->content, ")") == 0)
+        res = -1;
 
     word_free(w);
     return res;
@@ -154,6 +166,9 @@ static int process_inter_cmd_separator(
 static void process_regular_word(struct word *w,
         struct command_pipe *cmd_pipe)
 {
+    if (cmd_pipe_is_empty(cmd_pipe))
+        add_cmd_to_pipe(cmd_pipe);
+
     add_arg_to_last_pipe_cmd(cmd_pipe, w->content);
     free(w); /* still need the content in cmd */
 }
@@ -204,7 +219,7 @@ static int parse_command_end(
     return 1;
 }
 
-enum pipe_sequence_rule get_sequence_rule_of_word(struct word *w)
+static enum pipe_sequence_rule get_sequence_rule_of_word(struct word *w)
 {
     if (!w || w->wtype != separator)
         return none;
@@ -221,7 +236,7 @@ enum pipe_sequence_rule get_sequence_rule_of_word(struct word *w)
         return none;
 }
 
-struct command_pipe *parse_tokens_to_cmd_pipe(
+static struct command_pipe *parse_tokens_to_cmd_pipe(
         struct word_list *tokens,
         enum pipe_sequence_rule *rule_out
         )
@@ -231,7 +246,6 @@ struct command_pipe *parse_tokens_to_cmd_pipe(
     struct word *last_w;
 
     cmd_pipe = create_cmd_pipe();
-    add_cmd_to_pipe(cmd_pipe);
 
     parse_res = 
         parse_main_command_part(cmd_pipe, tokens, &last_w) &&
@@ -246,4 +260,25 @@ struct command_pipe *parse_tokens_to_cmd_pipe(
         free_cmd_pipe(cmd_pipe);
         return NULL;
     }
+}
+
+struct pipe_sequence *parse_tokens_to_pipe_seq(struct word_list *tokens)
+{
+    struct pipe_sequence *pipe_seq;
+    struct command_pipe *cmd_pipe;
+    enum pipe_sequence_rule rule;
+
+    pipe_seq = create_pipe_seq();
+
+    while (!word_list_is_empty(tokens)) {
+        cmd_pipe = parse_tokens_to_cmd_pipe(tokens, &rule);
+        if (!cmd_pipe) {
+            free_pipe_seq(pipe_seq);
+            return NULL;
+        }
+
+        add_pipe_to_seq(pipe_seq, cmd_pipe, rule);
+    }
+
+    return pipe_seq;
 }

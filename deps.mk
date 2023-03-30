@@ -5,18 +5,25 @@ interpreter.o: src/interpreter/interpreter.c \
  src/interpreter/../tokeniz/word.h \
  src/interpreter/../execution/parse_command.h \
  src/interpreter/../execution/../tokeniz/word_list.h \
+ src/interpreter/../execution/pipe_seq.h \
+ src/interpreter/../execution/cmd_pipe.h \
  src/interpreter/../execution/command.h \
  src/interpreter/../execution/execute_command.h \
  src/interpreter/../execution/cmd_res.h \
  src/interpreter/../execution/cmd_res.h
+cmd_pipe.o: src/execution/cmd_pipe.c src/execution/cmd_pipe.h \
+ src/execution/command.h
 parse_command.o: src/execution/parse_command.c \
  src/execution/parse_command.h src/execution/../tokeniz/word_list.h \
- src/execution/../tokeniz/word.h src/execution/command.h
+ src/execution/../tokeniz/word.h src/execution/pipe_seq.h \
+ src/execution/cmd_pipe.h src/execution/command.h
+pipe_seq.o: src/execution/pipe_seq.c src/execution/pipe_seq.h \
+ src/execution/cmd_pipe.h src/execution/command.h
 execute_command.o: src/execution/execute_command.c \
  src/execution/execute_command.h src/execution/../tokeniz/word_list.h \
- src/execution/../tokeniz/word.h src/execution/command.h \
- src/execution/cmd_res.h src/execution/parse_command.h \
- src/execution/../utils/int_set.h
+ src/execution/../tokeniz/word.h src/execution/pipe_seq.h \
+ src/execution/cmd_pipe.h src/execution/command.h src/execution/cmd_res.h \
+ src/execution/parse_command.h src/execution/../utils/int_set.h
 command.o: src/execution/command.c src/execution/command.h
 line_tokenization.o: src/tokeniz/line_tokenization.c \
  src/tokeniz/line_tokenization.h src/tokeniz/word_list.h \

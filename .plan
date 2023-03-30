@@ -75,8 +75,12 @@ Shell-VI: (5_39)
 
 Shell-VII: (5_40)
 * Separate command interpreter from prompt (takes string, performs action)
-- rename cmd chain to pipe
-- Add () for recursive calls to the command interpreter as proc
-- Add &&, ||, ; chaining of commands
+* rename cmd chain to pipe
+* Add &&, ||, ; chaining of commands
+    * Pipe sequence
+    * Fix empty pipe bug and dangling empty cmd if | is first
+    * Run pipe seq
+- Reorganize files and funcs between execution and interpreter folders
 - Reimplement & as a chain-level separator for launching first prog in bg
     and second in fg
+- Add () for recursive calls to the command interpreter as proc

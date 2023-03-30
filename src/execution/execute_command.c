@@ -1,7 +1,10 @@
 /* Toy-Shell/src/execution/execute_command.c */
 #include "execute_command.h"
+#include "cmd_pipe.h"
+#include "cmd_res.h"
 #include "parse_command.h"
 #include "../utils/int_set.h"
+#include "pipe_seq.h"
 
 #include <signal.h>
 #include <errno.h>
@@ -179,10 +182,15 @@ gleader_deinit:
     _exit(exit_code);
 }
             
-int execute_cmd(struct command_pipe *cmd_pipe, struct command_res *res)
+void execute_pipe(struct command_pipe *cmd_pipe, struct command_res *res)
 {
     int pgid;
     int status, wr;
+
+    if (cmd_pipe_is_empty(cmd_pipe)) {
+        res->type = noproc;
+        return;
+    }
 
     /* deal with cd command, as it can not be spawned as a separate proc 
      * ( that would not change the current dir of the interpretor ) */
@@ -234,7 +242,43 @@ int execute_cmd(struct command_pipe *cmd_pipe, struct command_res *res)
 deinit:
     if (cmd_pipe != NULL)
         free_cmd_pipe(cmd_pipe);
-    return 0;
+}
+
+int execute_seq(struct pipe_sequence *pipe_seq, struct command_res *res)
+{
+    struct pipe_sequence_node *node;
+
+    if (!pipe_seq->first)
+        return 0;
+
+    while (pipe_seq->first) {
+        node = pop_first_node_from_seq(pipe_seq);
+        execute_pipe(node->pipe, res);
+
+        switch (node->rule) {
+            case none:
+                goto break_while;
+            case always:
+                break;
+            case if_success:
+                if (res->type == exited && res->code == 0)
+                    break;
+                else
+                    goto break_while;
+            case if_failed:
+                if (res->type == killed || 
+                        (res->type == exited && res->code != 0))
+                    break;
+                else
+                    goto break_while;
+            case to_bg:
+                // @TODO: implement
+                break;
+        }
+    }
+
+break_while:
+    return 1;
 }
 
 void put_cmd_res(FILE *f, struct command_res *res)

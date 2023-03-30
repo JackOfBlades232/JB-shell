@@ -8,19 +8,20 @@
 
 void interpret_and_run_cmd(struct word_list *words)
 {
+    struct pipe_sequence *pipe_seq;
     struct command_res cmd_res;
-    struct command_pipe *cmd_pipe;
-    enum pipe_sequence_rule seq_rule;
 
     if (word_list_is_empty(words))
         return;
 
-    cmd_pipe = parse_tokens_to_cmd_pipe(words, &seq_rule);
-    if (!cmd_pipe) {
+    pipe_seq = parse_tokens_to_pipe_seq(words);
+    if (!pipe_seq) {
         printf("Invalid command\n");
         return;
     }
 
-    if (execute_cmd(cmd_pipe, &cmd_res) == 0)
+    if (execute_seq(pipe_seq, &cmd_res) == 0)
         put_cmd_res(stdout, &cmd_res);
+
+    free_pipe_seq(pipe_seq);
 }
