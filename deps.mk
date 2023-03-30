@@ -3,10 +3,11 @@ int_set.o: src/utils/int_set.c src/utils/int_set.h
 interpreter.o: src/interpreter/interpreter.c \
  src/interpreter/interpreter.h src/interpreter/../tokeniz/word_list.h \
  src/interpreter/../tokeniz/word.h \
- src/interpreter/../execution/execute_command.h \
+ src/interpreter/../execution/parse_command.h \
  src/interpreter/../execution/../tokeniz/word_list.h \
  src/interpreter/../execution/command.h \
  src/interpreter/../execution/cmd_res.h \
+ src/interpreter/../execution/execute_command.h \
  src/interpreter/../execution/cmd_res.h
 parse_command.o: src/execution/parse_command.c \
  src/execution/parse_command.h src/execution/../tokeniz/word_list.h \

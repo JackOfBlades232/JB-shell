@@ -9,12 +9,25 @@
 #include <stdio.h>
 #include <string.h>
 
-static int word_is_end_separator(struct word *w)
+static int is_chain_end(struct word *w)
+{
+    if (!w) /* end of tokens is a chain separator, in a way */
+        return 1;
+    if (w->wtype == regular_wrd)
+        return 0;
+    return 
+        strcmp(w->content, ";") == 0 ||
+        // strcmp(w->content, "&") == 0 ||
+        strcmp(w->content, "&&") == 0 ||
+        strcmp(w->content, "||") == 0;
+}
+
+static int word_is_file_io_separator(struct word *w)
 {
     if (w->wtype == regular_wrd)
         return 0;
     return 
-        strcmp(w->content, "&") == 0 ||
+        strcmp(w->content, "&") == 0 || // remove
         strcmp(w->content, ">") == 0 ||
         strcmp(w->content, "<") == 0 ||
         strcmp(w->content, ">>") == 0;
@@ -22,7 +35,9 @@ static int word_is_end_separator(struct word *w)
 
 static int word_is_inter_cmd_separator(struct word *w)
 {
-    return w->wtype == separator && !word_is_end_separator(w);
+    return w->wtype == separator && 
+        !is_chain_end(w) &&
+        !word_is_file_io_separator(w);
 }
 
 static int prepare_stdin_redirection(struct command_chain *cmd_chain,
@@ -151,8 +166,8 @@ static int parse_main_command_part(
 {
     struct word *w;
 
-    while ((w = word_list_pop_first(tokens)) != NULL) {
-        if (word_is_end_separator(w))
+    while (!is_chain_end(w = word_list_pop_first(tokens))) {
+        if (word_is_file_io_separator(w))
             break;
         else if (word_is_inter_cmd_separator(w)) {
             int sep_res;
@@ -177,10 +192,10 @@ static int parse_command_end(
 {
     struct word *w = last_w;
 
-    while (w != NULL) {
+    while (!is_chain_end(w)) {
         int sep_res;
 
-        if (!word_is_end_separator(w)) {
+        if (!word_is_file_io_separator(w)) {
             res->type = failed;
             word_free(w);
             return 0;

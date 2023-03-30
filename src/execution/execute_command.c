@@ -179,20 +179,10 @@ gleader_deinit:
     _exit(exit_code);
 }
             
-int execute_cmd(struct word_list *tokens, struct command_res *res)
+int execute_cmd(struct command_chain *cmd_chain, struct command_res *res)
 {
     int pgid;
     int status, wr;
-    struct command_chain *cmd_chain;
-    
-    /* return value != 0 only if empty cmd given */
-    if (word_list_is_empty(tokens))
-        return 1;
-
-    /* parse out all commands and prepare additional io streams */
-    cmd_chain = parse_tokens_to_cmd_chain(tokens, res);
-    if (cmd_chain == NULL)
-        goto deinit;
 
     /* deal with cd command, as it can not be spawned as a separate proc 
      * ( that would not change the current dir of the interpretor ) */
