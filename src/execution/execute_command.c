@@ -56,17 +56,17 @@ static void close_additional_descriptors(struct command *cmd)
         close(cmd->stdout_fd);
 }
 
-static void close_all_additional_descriptors(struct command_chain *cmd_chain)
+static void close_all_additional_descriptors(struct command_pipe *cmd_pipe)
 {
-    map_to_all_cmds_in_chain(cmd_chain, close_additional_descriptors);
+    map_to_all_cmds_in_pipe(cmd_pipe, close_additional_descriptors);
 }
 
-static int execute_next_command(struct command_chain *cmd_chain)
+static int execute_next_command(struct command_pipe *cmd_pipe)
 {
     struct command *cmd;
     int pid;
 
-    cmd = get_first_cmd_in_chain(cmd_chain);
+    cmd = get_first_cmd_in_pipe(cmd_pipe);
     if (cmd == NULL)
         return -1;
 
@@ -78,7 +78,7 @@ static int execute_next_command(struct command_chain *cmd_chain)
             dup2(cmd->stdin_fd, STDIN_FILENO);
         if (cmd->stdout_fd != -1)
             dup2(cmd->stdout_fd, STDOUT_FILENO);
-        close_all_additional_descriptors(cmd_chain);
+        close_all_additional_descriptors(cmd_pipe);
 
         execvp(cmd->cmd_name, cmd->argv);
         perror(cmd->cmd_name);
@@ -86,13 +86,13 @@ static int execute_next_command(struct command_chain *cmd_chain)
     } 
 
     close_additional_descriptors(cmd);
-    delete_first_cmd_from_chain(cmd_chain);
+    delete_first_cmd_from_pipe(cmd_pipe);
 
     return pid;
 }
 
 static int spawn_processes_for_all_commands(
-        struct command_chain *cmd_chain,
+        struct command_pipe *cmd_pipe,
         struct int_set *pids,
         int *last_proc_pid,
         int is_bg
@@ -100,8 +100,8 @@ static int spawn_processes_for_all_commands(
 {
     int pid;
 
-    while (!cmd_chain_is_empty(cmd_chain)) {
-        pid = execute_next_command(cmd_chain);
+    while (!cmd_pipe_is_empty(cmd_pipe)) {
+        pid = execute_next_command(cmd_pipe);
         if (pid == -1)
             return 0;
 
@@ -121,14 +121,14 @@ static void set_group_to_fg(int pgid)
     signal(SIGTTOU, SIG_DFL);
 }
 
-static int run_proc_group(struct command_chain *cmd_chain)
+static int run_proc_group(struct command_pipe *cmd_pipe)
 {
     int pid;
     int status, wr;
     int last_proc_pid = -1,
         exit_code = 0;
 
-    int is_bg = cmd_chain_is_background(cmd_chain);
+    int is_bg = cmd_pipe_is_background(cmd_pipe);
     struct int_set *pids = NULL;
 
     pid = fork();
@@ -145,8 +145,8 @@ static int run_proc_group(struct command_chain *cmd_chain)
         pids = create_int_set();
     }
 
-    /* if not cd, spin up all procs in chain, and save their pids if non-bg */
-    spawn_processes_for_all_commands(cmd_chain, pids, &last_proc_pid, is_bg);
+    /* if not cd, spin up all procs in pipe, and save their pids if non-bg */
+    spawn_processes_for_all_commands(cmd_pipe, pids, &last_proc_pid, is_bg);
 
     /* if running in background, skip the wait cycle */
     if (is_bg) {
@@ -175,21 +175,21 @@ static int run_proc_group(struct command_chain *cmd_chain)
 gleader_deinit:
     if (pids != NULL)
         free_int_set(pids);
-    free_cmd_chain(cmd_chain);
+    free_cmd_pipe(cmd_pipe);
     _exit(exit_code);
 }
             
-int execute_cmd(struct command_chain *cmd_chain, struct command_res *res)
+int execute_cmd(struct command_pipe *cmd_pipe, struct command_res *res)
 {
     int pgid;
     int status, wr;
 
     /* deal with cd command, as it can not be spawned as a separate proc 
      * ( that would not change the current dir of the interpretor ) */
-    if (chain_contains_cmd(cmd_chain, "cd")) {
+    if (pipe_contains_cmd(cmd_pipe, "cd")) {
         /* cd should not be used in a pipe */
-        if (cmd_chain_len(cmd_chain) == 1)
-            try_execute_cd(get_first_cmd_in_chain(cmd_chain), res);
+        if (cmd_pipe_len(cmd_pipe) == 1)
+            try_execute_cd(get_first_cmd_in_pipe(cmd_pipe), res);
         else
             res->type = failed;
 
@@ -197,15 +197,15 @@ int execute_cmd(struct command_chain *cmd_chain, struct command_res *res)
     }
 
     /* create new group with intermediary g-leader proc and run command */
-    pgid = run_proc_group(cmd_chain);
-    close_all_additional_descriptors(cmd_chain);
+    pgid = run_proc_group(cmd_pipe);
+    close_all_additional_descriptors(cmd_pipe);
     if (pgid == -1) {
         res->type = failed;
         goto deinit;
     }
 
     /* if running in background, skip the wait */
-    if (cmd_chain_is_background(cmd_chain)) {
+    if (cmd_pipe_is_background(cmd_pipe)) {
         res->type = noproc;
         goto deinit;
     }
@@ -232,8 +232,8 @@ int execute_cmd(struct command_chain *cmd_chain, struct command_res *res)
     }
 
 deinit:
-    if (cmd_chain != NULL)
-        free_cmd_chain(cmd_chain);
+    if (cmd_pipe != NULL)
+        free_cmd_pipe(cmd_pipe);
     return 0;
 }
 

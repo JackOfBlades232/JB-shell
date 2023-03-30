@@ -7,13 +7,13 @@
 
 enum { base_argv_cap = 10, argv_cap_mult = 2 };
 
-struct command_chain_node {
+struct command_pipe_node {
     struct command *cmd;
-    struct command_chain_node *next;
+    struct command_pipe_node *next;
 };
 
-struct command_chain {
-    struct command_chain_node *first, *last;
+struct command_pipe {
+    struct command_pipe_node *first, *last;
     int run_in_background;
 };
 
@@ -62,18 +62,18 @@ static void add_arg_to_cmd(struct command *cp, char *arg)
         cp->cmd_name = cp->argv[0];
 }
 
-struct command_chain *create_cmd_chain()
+struct command_pipe *create_cmd_pipe()
 {
-    struct command_chain *cc = malloc(sizeof(struct command_chain));
+    struct command_pipe *cc = malloc(sizeof(struct command_pipe));
     cc->first = NULL;
     cc->last = NULL;
     cc->run_in_background = 0;
     return cc;
 }
 
-void free_cmd_chain(struct command_chain *cc)
+void free_cmd_pipe(struct command_pipe *cc)
 {
-    struct command_chain_node *tmp;
+    struct command_pipe_node *tmp;
     while (cc->first != NULL) {
         tmp = cc->first;
         cc->first = cc->first->next;
@@ -83,24 +83,24 @@ void free_cmd_chain(struct command_chain *cc)
     cc->last = NULL;
 }
 
-int cmd_chain_is_empty(struct command_chain *cc)
+int cmd_pipe_is_empty(struct command_pipe *cc)
 {
     return cc->first == NULL;
 }
 
-int cmd_chain_len(struct command_chain *cc)
+int cmd_pipe_len(struct command_pipe *cc)
 {
-    struct command_chain_node *tmp;
+    struct command_pipe_node *tmp;
     int len = 0;
     for (tmp = cc->first; tmp; tmp = tmp->next)
         len++;
     return len;
 }
 
-struct command *add_cmd_to_chain(struct command_chain *cc)
+struct command *add_cmd_to_pipe(struct command_pipe *cc)
 {
-    struct command_chain_node *tmp;
-    tmp = malloc(sizeof(struct command_chain_node));
+    struct command_pipe_node *tmp;
+    tmp = malloc(sizeof(struct command_pipe_node));
     tmp->cmd = malloc(sizeof(struct command));
     init_cmd(tmp->cmd);
     tmp->next = NULL;
@@ -116,9 +116,9 @@ struct command *add_cmd_to_chain(struct command_chain *cc)
     return cc->last->cmd;
 }
 
-int delete_first_cmd_from_chain(struct command_chain *cc)
+int delete_first_cmd_from_pipe(struct command_pipe *cc)
 {
-    struct command_chain_node *tmp;
+    struct command_pipe_node *tmp;
 
     if (cc->first == NULL)
         return 0;
@@ -133,21 +133,21 @@ int delete_first_cmd_from_chain(struct command_chain *cc)
     return 1;
 }
 
-struct command *get_first_cmd_in_chain(struct command_chain *cc)
+struct command *get_first_cmd_in_pipe(struct command_pipe *cc)
 {
     if (cc->first == NULL)
         return NULL;
     return cc->first->cmd;
 }
 
-struct command *get_last_cmd_in_chain(struct command_chain *cc)
+struct command *get_last_cmd_in_pipe(struct command_pipe *cc)
 {
     if (cc->last == NULL)
         return NULL;
     return cc->last->cmd;
 }
 
-int add_arg_to_last_chain_cmd(struct command_chain *cc, char *arg)
+int add_arg_to_last_pipe_cmd(struct command_pipe *cc, char *arg)
 {
     if (cc->last == NULL)
         return 0;
@@ -155,27 +155,27 @@ int add_arg_to_last_chain_cmd(struct command_chain *cc, char *arg)
     return 1;
 }
 
-int cmd_chain_is_background(struct command_chain *cc)
+int cmd_pipe_is_background(struct command_pipe *cc)
 {
     return cc->run_in_background;
 }
 
-void set_cmd_chain_to_background(struct command_chain *cc)
+void set_cmd_pipe_to_background(struct command_pipe *cc)
 {
     cc->run_in_background = 1;
 }
 
-void map_to_all_cmds_in_chain(struct command_chain *cc, command_modifier func)
+void map_to_all_cmds_in_pipe(struct command_pipe *cc, command_modifier func)
 {
-    struct command_chain_node *tmp;
+    struct command_pipe_node *tmp;
     for (tmp = cc->first; tmp; tmp = tmp->next) {
         (*func)(tmp->cmd);
     }
 }
 
-int chain_contains_cmd(struct command_chain *cc, const char *cmd_name)
+int pipe_contains_cmd(struct command_pipe *cc, const char *cmd_name)
 {
-    struct command_chain_node *tmp;
+    struct command_pipe_node *tmp;
     for (tmp = cc->first; tmp; tmp = tmp->next) {
         if (strcmp(cmd_name, tmp->cmd->cmd_name) == 0)
             return 1;

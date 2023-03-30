@@ -9,9 +9,9 @@
 #include <stdio.h>
 #include <string.h>
 
-static int is_chain_end(struct word *w)
+static int is_pipe_end(struct word *w)
 {
-    if (!w) /* end of tokens is a chain separator, in a way */
+    if (!w) /* end of tokens is a pipe separator, in a way */
         return 1;
     if (w->wtype == regular_wrd)
         return 0;
@@ -22,7 +22,7 @@ static int is_chain_end(struct word *w)
         strcmp(w->content, "||") == 0;
 }
 
-static int word_is_chain_end_separator(struct word *w)
+static int word_is_pipe_end_separator(struct word *w)
 {
     if (w->wtype == regular_wrd)
         return 0;
@@ -36,14 +36,14 @@ static int word_is_chain_end_separator(struct word *w)
 static int word_is_inter_cmd_separator(struct word *w)
 {
     return w->wtype == separator && 
-        !is_chain_end(w) &&
-        !word_is_chain_end_separator(w);
+        !is_pipe_end(w) &&
+        !word_is_pipe_end_separator(w);
 }
 
-static int prepare_stdin_redirection(struct command_chain *cmd_chain,
+static int prepare_stdin_redirection(struct command_pipe *cmd_pipe,
         struct word_list *remaining_tokens)
 {
-    struct command *cmd = get_first_cmd_in_chain(cmd_chain);
+    struct command *cmd = get_first_cmd_in_pipe(cmd_pipe);
     struct word *w;
     int res = 0;
 
@@ -63,10 +63,10 @@ static int prepare_stdin_redirection(struct command_chain *cmd_chain,
     return res;
 }
 
-static int prepare_stdout_redirection(struct command_chain *cmd_chain, 
+static int prepare_stdout_redirection(struct command_pipe *cmd_pipe, 
         struct word_list *remaining_tokens, int is_append)
 {
-    struct command *cmd = get_last_cmd_in_chain(cmd_chain);
+    struct command *cmd = get_last_cmd_in_pipe(cmd_pipe);
     struct word *w;
     int res = 0;
     int mode = O_WRONLY | O_CREAT | (is_append ? O_APPEND : O_TRUNC);
@@ -89,20 +89,20 @@ static int prepare_stdout_redirection(struct command_chain *cmd_chain,
 
 static int process_end_separator(
         struct word *w, 
-        struct command_chain *cmd_chain,
+        struct command_pipe *cmd_pipe,
         struct word_list *remaining_tokens)
 {
     int res = 0;
 
     if (strcmp(w->content, "&") == 0) {
-        set_cmd_chain_to_background(cmd_chain);
+        set_cmd_pipe_to_background(cmd_pipe);
         res = word_list_is_empty(remaining_tokens);
     } else if (strcmp(w->content, "<") == 0) {
-        res = prepare_stdin_redirection(cmd_chain, remaining_tokens);
+        res = prepare_stdin_redirection(cmd_pipe, remaining_tokens);
     } else if (strcmp(w->content, ">") == 0) {
-        res = prepare_stdout_redirection(cmd_chain, remaining_tokens, 0);
+        res = prepare_stdout_redirection(cmd_pipe, remaining_tokens, 0);
     } else if (strcmp(w->content, ">>") == 0) {
-        res = prepare_stdout_redirection(cmd_chain, remaining_tokens, 1);
+        res = prepare_stdout_redirection(cmd_pipe, remaining_tokens, 1);
     }
 
     word_free(w);
@@ -124,57 +124,57 @@ static int prepare_pipe_for_two_commands(
     return 1;
 }
 
-static int try_add_cmd_to_pipe(struct command_chain *cmd_chain)
+static int try_add_cmd_to_pipe(struct command_pipe *cmd_pipe)
 {
     struct command 
-        *last_cmd = get_last_cmd_in_chain(cmd_chain),
+        *last_cmd = get_last_cmd_in_pipe(cmd_pipe),
         *new_cmd;
 
     if (last_cmd == NULL || cmd_is_empty(last_cmd))
         return 0;
 
-    new_cmd = add_cmd_to_chain(cmd_chain);
+    new_cmd = add_cmd_to_pipe(cmd_pipe);
     return prepare_pipe_for_two_commands(last_cmd, new_cmd);
 }
 
 static int process_inter_cmd_separator(
         struct word *w, 
-        struct command_chain *cmd_chain,
+        struct command_pipe *cmd_pipe,
         struct word_list *remaining_tokens)
 {
     int res = 0;
 
     if (strcmp(w->content, "|") == 0)
-        res = try_add_cmd_to_pipe(cmd_chain);
+        res = try_add_cmd_to_pipe(cmd_pipe);
 
     word_free(w);
     return res;
 }
 
 static void process_regular_word(struct word *w,
-        struct command_chain *cmd_chain)
+        struct command_pipe *cmd_pipe)
 {
-    add_arg_to_last_chain_cmd(cmd_chain, w->content);
+    add_arg_to_last_pipe_cmd(cmd_pipe, w->content);
     free(w); /* still need the content in cmd */
 }
 
 static int parse_main_command_part(
-        struct command_chain *cmd_chain,
+        struct command_pipe *cmd_pipe,
         struct word_list *tokens, 
         struct word **next_w)
 {
     struct word *w;
 
-    while (!is_chain_end(w = word_list_pop_first(tokens))) {
-        if (word_is_chain_end_separator(w))
+    while (!is_pipe_end(w = word_list_pop_first(tokens))) {
+        if (word_is_pipe_end_separator(w))
             break;
         else if (word_is_inter_cmd_separator(w)) {
             int sep_res;
-            sep_res = process_inter_cmd_separator(w, cmd_chain, tokens);
+            sep_res = process_inter_cmd_separator(w, cmd_pipe, tokens);
             if (sep_res <= 0)
                 return 0;
         } else 
-            process_regular_word(w, cmd_chain);
+            process_regular_word(w, cmd_pipe);
     }
 
     *next_w = w;
@@ -182,19 +182,19 @@ static int parse_main_command_part(
 }
 
 static int parse_command_end(
-        struct command_chain *cmd_chain,
+        struct command_pipe *cmd_pipe,
         struct word_list *tokens, 
         struct word **next_w)
 {
-    while (!is_chain_end(*next_w)) {
+    while (!is_pipe_end(*next_w)) {
         int sep_res;
 
-        if (!word_is_chain_end_separator(*next_w)) {
+        if (!word_is_pipe_end_separator(*next_w)) {
             word_free(*next_w);
             return 0;
         }
 
-        sep_res = process_end_separator(*next_w, cmd_chain, tokens);
+        sep_res = process_end_separator(*next_w, cmd_pipe, tokens);
         if (sep_res <= 0)
             return 0;
 
@@ -204,7 +204,7 @@ static int parse_command_end(
     return 1;
 }
 
-enum chain_sequence_rule get_sequence_rule_of_word(struct word *w)
+enum pipe_sequence_rule get_sequence_rule_of_word(struct word *w)
 {
     if (!w || w->wtype != separator)
         return none;
@@ -221,29 +221,29 @@ enum chain_sequence_rule get_sequence_rule_of_word(struct word *w)
         return none;
 }
 
-struct command_chain *parse_tokens_to_cmd_chain(
+struct command_pipe *parse_tokens_to_cmd_pipe(
         struct word_list *tokens,
-        enum chain_sequence_rule *rule_out
+        enum pipe_sequence_rule *rule_out
         )
 {
     int parse_res;
-    struct command_chain *cmd_chain;
+    struct command_pipe *cmd_pipe;
     struct word *last_w;
 
-    cmd_chain = create_cmd_chain();
-    add_cmd_to_chain(cmd_chain);
+    cmd_pipe = create_cmd_pipe();
+    add_cmd_to_pipe(cmd_pipe);
 
     parse_res = 
-        parse_main_command_part(cmd_chain, tokens, &last_w) &&
-        parse_command_end(cmd_chain, tokens, &last_w);
+        parse_main_command_part(cmd_pipe, tokens, &last_w) &&
+        parse_command_end(cmd_pipe, tokens, &last_w);
 
     if (parse_res) {
         *rule_out = get_sequence_rule_of_word(last_w);
         if (last_w)
             word_free(last_w);
-        return cmd_chain;
+        return cmd_pipe;
     } else {
-        free_cmd_chain(cmd_chain);
+        free_cmd_pipe(cmd_pipe);
         return NULL;
     }
 }

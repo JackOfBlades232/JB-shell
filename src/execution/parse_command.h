@@ -5,11 +5,11 @@
 #include "../tokeniz/word_list.h"
 #include "command.h"
 
-enum chain_sequence_rule { none, always, if_success, if_failed, to_bg };
+enum pipe_sequence_rule { none, always, if_success, if_failed, to_bg };
 
-struct command_chain *parse_tokens_to_cmd_chain(
+struct command_pipe *parse_tokens_to_cmd_pipe(
         struct word_list *tokens,
-        enum chain_sequence_rule *rule_out
+        enum pipe_sequence_rule *rule_out
         );
 
 #endif

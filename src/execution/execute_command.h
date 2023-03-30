@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 void set_up_process_control();
-int execute_cmd(struct command_chain *cmd_chain, struct command_res *res);
+int execute_cmd(struct command_pipe *cmd_pipe, struct command_res *res);
 void put_cmd_res(FILE *f, struct command_res *res);
 
 #endif
