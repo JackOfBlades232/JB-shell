@@ -32,7 +32,7 @@ int main()
         /* step 2: lex analisys resulting in token list */
         token_res = tokenize_input_line_to_word_list(line, &words);
         if (token_res != 0) {
-            fprintf(stderr, "Invalid command\n");
+            printf("Invalid command\n");
             continue;
         }
 

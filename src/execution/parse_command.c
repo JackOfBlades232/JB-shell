@@ -22,7 +22,7 @@ static int is_chain_end(struct word *w)
         strcmp(w->content, "||") == 0;
 }
 
-static int word_is_file_io_separator(struct word *w)
+static int word_is_chain_end_separator(struct word *w)
 {
     if (w->wtype == regular_wrd)
         return 0;
@@ -37,7 +37,7 @@ static int word_is_inter_cmd_separator(struct word *w)
 {
     return w->wtype == separator && 
         !is_chain_end(w) &&
-        !word_is_file_io_separator(w);
+        !word_is_chain_end_separator(w);
 }
 
 static int prepare_stdin_redirection(struct command_chain *cmd_chain,
@@ -161,21 +161,18 @@ static void process_regular_word(struct word *w,
 static int parse_main_command_part(
         struct command_chain *cmd_chain,
         struct word_list *tokens, 
-        struct command_res *res,
         struct word **next_w)
 {
     struct word *w;
 
     while (!is_chain_end(w = word_list_pop_first(tokens))) {
-        if (word_is_file_io_separator(w))
+        if (word_is_chain_end_separator(w))
             break;
         else if (word_is_inter_cmd_separator(w)) {
             int sep_res;
             sep_res = process_inter_cmd_separator(w, cmd_chain, tokens);
-            if (sep_res <= 0) {
-                res->type = sep_res == -1 ? not_implemented : failed;
+            if (sep_res <= 0)
                 return 0;
-            }
         } else 
             process_regular_word(w, cmd_chain);
     }
@@ -187,34 +184,47 @@ static int parse_main_command_part(
 static int parse_command_end(
         struct command_chain *cmd_chain,
         struct word_list *tokens, 
-        struct command_res *res,
-        struct word *last_w)
+        struct word **next_w)
 {
-    struct word *w = last_w;
-
-    while (!is_chain_end(w)) {
+    while (!is_chain_end(*next_w)) {
         int sep_res;
 
-        if (!word_is_file_io_separator(w)) {
-            res->type = failed;
-            word_free(w);
+        if (!word_is_chain_end_separator(*next_w)) {
+            word_free(*next_w);
             return 0;
         }
 
-        sep_res = process_end_separator(w, cmd_chain, tokens);
-        if (sep_res <= 0) {
-            res->type = sep_res == -1 ? not_implemented : failed;
+        sep_res = process_end_separator(*next_w, cmd_chain, tokens);
+        if (sep_res <= 0)
             return 0;
-        }
 
-        w = word_list_pop_first(tokens);
+        *next_w = word_list_pop_first(tokens);
     }
 
     return 1;
 }
 
+enum chain_sequence_rule get_sequence_rule_of_word(struct word *w)
+{
+    if (!w || w->wtype != separator)
+        return none;
+
+    if (strcmp(w->content, ";") == 0)
+        return always;
+    else if (strcmp(w->content, "&") == 0)
+        return to_bg;
+    else if (strcmp(w->content, "&&") == 0)
+        return if_success;
+    else if (strcmp(w->content, "||") == 0)
+        return if_failed;
+    else
+        return none;
+}
+
 struct command_chain *parse_tokens_to_cmd_chain(
-        struct word_list *tokens, struct command_res *res)
+        struct word_list *tokens,
+        enum chain_sequence_rule *rule_out
+        )
 {
     int parse_res;
     struct command_chain *cmd_chain;
@@ -224,10 +234,13 @@ struct command_chain *parse_tokens_to_cmd_chain(
     add_cmd_to_chain(cmd_chain);
 
     parse_res = 
-        parse_main_command_part(cmd_chain, tokens, res, &last_w) &&
-        parse_command_end(cmd_chain, tokens, res, last_w);
+        parse_main_command_part(cmd_chain, tokens, &last_w) &&
+        parse_command_end(cmd_chain, tokens, &last_w);
 
     if (parse_res) {
+        *rule_out = get_sequence_rule_of_word(last_w);
+        if (last_w)
+            word_free(last_w);
         return cmd_chain;
     } else {
         free_cmd_chain(cmd_chain);

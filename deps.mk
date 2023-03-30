@@ -6,13 +6,12 @@ interpreter.o: src/interpreter/interpreter.c \
  src/interpreter/../execution/parse_command.h \
  src/interpreter/../execution/../tokeniz/word_list.h \
  src/interpreter/../execution/command.h \
- src/interpreter/../execution/cmd_res.h \
  src/interpreter/../execution/execute_command.h \
+ src/interpreter/../execution/cmd_res.h \
  src/interpreter/../execution/cmd_res.h
 parse_command.o: src/execution/parse_command.c \
  src/execution/parse_command.h src/execution/../tokeniz/word_list.h \
- src/execution/../tokeniz/word.h src/execution/command.h \
- src/execution/cmd_res.h
+ src/execution/../tokeniz/word.h src/execution/command.h
 execute_command.o: src/execution/execute_command.c \
  src/execution/execute_command.h src/execution/../tokeniz/word_list.h \
  src/execution/../tokeniz/word.h src/execution/command.h \

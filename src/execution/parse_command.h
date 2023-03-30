@@ -4,11 +4,12 @@
 
 #include "../tokeniz/word_list.h"
 #include "command.h"
-#include "cmd_res.h"
+
+enum chain_sequence_rule { none, always, if_success, if_failed, to_bg };
 
 struct command_chain *parse_tokens_to_cmd_chain(
         struct word_list *tokens,
-        struct command_res *res
+        enum chain_sequence_rule *rule_out
         );
 
 #endif
