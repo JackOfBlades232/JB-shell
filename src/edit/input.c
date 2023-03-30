@@ -1,4 +1,4 @@
-/* Toy-Shell/src/input.c */
+/* Toy-Shell/src/edit/input.c */
 #include "input.h"
 #include "autocomplete.h"
 

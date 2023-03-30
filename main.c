@@ -1,5 +1,5 @@
 /* Toy-Shell/main.c */
-#include "src/prompt.h"
+#include "src/interpreter/prompt.h"
 
 #include <stdio.h>
 

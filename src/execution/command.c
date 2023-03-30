@@ -1,4 +1,4 @@
-/* Toy-Shell/src/command.h */
+/* Toy-Shell/src/execution/command.h */
 #include "command.h"
 
 #include <stdio.h>

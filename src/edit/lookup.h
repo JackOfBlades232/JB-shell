@@ -1,8 +1,8 @@
-/* Toy-Shell/src/lookup.h */
+/* Toy-Shell/src/edit/lookup.h */
 #ifndef LOOKUP_SENTRY
 #define LOOKUP_SENTRY
 
-#include "string_set.h"
+#include "../utils/string_set.h"
 
 enum query_result_type { not_found, single, multiple, too_many };
 

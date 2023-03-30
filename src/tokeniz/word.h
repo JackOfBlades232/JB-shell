@@ -1,4 +1,4 @@
-/* Toy-Shell/src/word.h */
+/* Toy-Shell/src/tokeniz/word.h */
 #ifndef WORD_SENTRY
 #define WORD_SENTRY
 

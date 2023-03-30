@@ -1,7 +1,7 @@
-/* Toy-Shell/src/execute_command.c */
+/* Toy-Shell/src/execution/execute_command.c */
 #include "execute_command.h"
 #include "parse_command.h"
-#include "int_set.h"
+#include "../utils/int_set.h"
 
 #include <signal.h>
 #include <errno.h>

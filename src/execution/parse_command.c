@@ -1,4 +1,4 @@
-/* Toy-Shell/src/parse_command.c */
+/* Toy-Shell/src/execution/parse_command.c */
 #include "parse_command.h"
 
 #include <sys/types.h>

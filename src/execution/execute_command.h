@@ -1,8 +1,9 @@
-/* Toy-Shell/src/execute_command.h */
+/* Toy-Shell/src/execution/execute_command.h */
+
 #ifndef EXECUTE_COMMAND_SENTRY
 #define EXECUTE_COMMAND_SENTRY
 
-#include "word_list.h"
+#include "../tokeniz/word_list.h"
 #include "command.h"
 #include "cmd_res.h"
 

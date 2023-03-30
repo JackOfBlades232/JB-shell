@@ -1,4 +1,4 @@
-/* Toy-Shell/src/input.h */
+/* Toy-Shell/src/edit/input.h */
 #ifndef INPUT_SENTRY
 #define INPUT_SENTRY
 

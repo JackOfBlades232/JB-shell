@@ -1,4 +1,4 @@
-/* Toy-Shell/src/word.c */
+/* Toy-Shell/src/tokeniz/word.c */
 #include "word.h"
 
 #include <stdlib.h>

@@ -1,6 +1,6 @@
-/* Toy-Shell/src/line_tokenization.c */
+/* Toy-Shell/src/tokeniz/line_tokenization.c */
 #include "line_tokenization.h"
-#include "input.h"
+#include "../edit/input.h"
 
 #include <stdlib.h>
 

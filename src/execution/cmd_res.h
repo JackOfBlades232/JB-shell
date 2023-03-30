@@ -1,4 +1,4 @@
-/* Toy-Shell/src/cmd_res.h */
+/* Toy-Shell/src/execution/cmd_res.h */
 #ifndef CMD_RES_SENTRY
 #define CMD_RES_SENTRY
 

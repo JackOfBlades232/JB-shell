@@ -1,4 +1,4 @@
-SRCMODULES = $(wildcard src/*.c)
+SRCMODULES = $(shell find src/ -type f -name '*.c')
 OBJMODULES = $(SRCMODULES:.c=.o)
 CC = gcc
 CFLAGS = -g -Wall

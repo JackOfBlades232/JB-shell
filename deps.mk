@@ -1,19 +1,33 @@
-autocomplete.o: src/autocomplete.c src/autocomplete.h src/input.h \
- src/lookup.h src/string_set.h
-command.o: src/command.c src/command.h
-execute_command.o: src/execute_command.c src/execute_command.h \
- src/word_list.h src/word.h src/command.h src/cmd_res.h \
- src/parse_command.h src/int_set.h
-input.o: src/input.c src/input.h src/autocomplete.h
-int_set.o: src/int_set.c src/int_set.h
-line_tokenization.o: src/line_tokenization.c src/line_tokenization.h \
- src/word_list.h src/word.h src/input.h
-lookup.o: src/lookup.c src/lookup.h src/string_set.h
-parse_command.o: src/parse_command.c src/parse_command.h src/word_list.h \
- src/word.h src/command.h src/cmd_res.h
-prompt.o: src/prompt.c src/prompt.h src/input.h src/line_tokenization.h \
- src/word_list.h src/word.h src/execute_command.h src/command.h \
- src/cmd_res.h
-string_set.o: src/string_set.c src/string_set.h
-word.o: src/word.c src/word.h
-word_list.o: src/word_list.c src/word_list.h src/word.h
+string_set.o: src/utils/string_set.c src/utils/string_set.h
+int_set.o: src/utils/int_set.c src/utils/int_set.h
+prompt.o: src/interpreter/prompt.c src/interpreter/prompt.h \
+ src/interpreter/../edit/input.h \
+ src/interpreter/../tokeniz/line_tokenization.h \
+ src/interpreter/../tokeniz/word_list.h src/interpreter/../tokeniz/word.h \
+ src/interpreter/../tokeniz/word_list.h \
+ src/interpreter/../execution/execute_command.h \
+ src/interpreter/../execution/../tokeniz/word_list.h \
+ src/interpreter/../execution/command.h \
+ src/interpreter/../execution/cmd_res.h \
+ src/interpreter/../execution/cmd_res.h
+parse_command.o: src/execution/parse_command.c \
+ src/execution/parse_command.h src/execution/../tokeniz/word_list.h \
+ src/execution/../tokeniz/word.h src/execution/command.h \
+ src/execution/cmd_res.h
+execute_command.o: src/execution/execute_command.c \
+ src/execution/execute_command.h src/execution/../tokeniz/word_list.h \
+ src/execution/../tokeniz/word.h src/execution/command.h \
+ src/execution/cmd_res.h src/execution/parse_command.h \
+ src/execution/../utils/int_set.h
+command.o: src/execution/command.c src/execution/command.h
+line_tokenization.o: src/tokeniz/line_tokenization.c \
+ src/tokeniz/line_tokenization.h src/tokeniz/word_list.h \
+ src/tokeniz/word.h src/tokeniz/../edit/input.h
+word_list.o: src/tokeniz/word_list.c src/tokeniz/word_list.h \
+ src/tokeniz/word.h
+word.o: src/tokeniz/word.c src/tokeniz/word.h
+autocomplete.o: src/edit/autocomplete.c src/edit/autocomplete.h \
+ src/edit/input.h src/edit/lookup.h src/edit/../utils/string_set.h
+lookup.o: src/edit/lookup.c src/edit/lookup.h \
+ src/edit/../utils/string_set.h
+input.o: src/edit/input.c src/edit/input.h src/edit/autocomplete.h

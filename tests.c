@@ -1,6 +1,6 @@
 /* Toy-Shell/tests.c */
-#include "src/lookup.h"
-#include "src/string_set.h"
+#include "src/edit/lookup.h"
+#include "src/utils/string_set.h"
 
 #include <stdio.h>
 #include <stdlib.h>

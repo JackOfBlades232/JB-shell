@@ -1,10 +1,10 @@
-/* Toy-Shell/src/prompt.c */
+/* Toy-Shell/src/interpreter/prompt.c */
 #include "prompt.h"
-#include "input.h"
-#include "line_tokenization.h"
-#include "word_list.h"
-#include "execute_command.h"
-#include "cmd_res.h"
+#include "../edit/input.h"
+#include "../tokeniz/line_tokenization.h"
+#include "../tokeniz/word_list.h"
+#include "../execution/execute_command.h"
+#include "../execution/cmd_res.h"
 
 #include <stdio.h>
 #include <unistd.h>

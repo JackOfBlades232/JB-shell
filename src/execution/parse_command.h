@@ -1,8 +1,8 @@
-/* Toy-Shell/src/parse_command.h */
+/* Toy-Shell/src/execution/parse_command.h */
 #ifndef PARSE_COMMAND_SENTRY
 #define PARSE_COMMAND_SENTRY
 
-#include "word_list.h"
+#include "../tokeniz/word_list.h"
 #include "command.h"
 #include "cmd_res.h"
 

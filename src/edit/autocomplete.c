@@ -1,4 +1,4 @@
-/* Toy-Shell/src/autocomplete.c */
+/* Toy-Shell/src/edit/autocomplete.c */
 #include "autocomplete.h"
 #include "lookup.h"
 

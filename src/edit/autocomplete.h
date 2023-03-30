@@ -1,4 +1,4 @@
-/* Toy-Shell/src/autocomplete.h */
+/* Toy-Shell/src/edit/autocomplete.h */
 #ifndef AUTOCOMPLETE_SENTRY
 #define AUTOCOMPLETE_SENTRY
 

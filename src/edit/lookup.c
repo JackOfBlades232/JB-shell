@@ -1,6 +1,5 @@
-/* Toy-Shell/src/lookup.c */
+/* Toy-Shell/src/edit/lookup.c */
 #include "lookup.h"
-#include "string_set.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>

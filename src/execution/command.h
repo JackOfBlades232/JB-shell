@@ -1,4 +1,4 @@
-/* Toy-Shell/src/command.h */
+/* Toy-Shell/src/execution/command.h */
 #ifndef COMMAND_SENTRY
 #define COMMAND_SENTRY
 

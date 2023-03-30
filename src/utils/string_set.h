@@ -1,4 +1,4 @@
-/* Toy-Shell/src/string_set.h */
+/* Toy-Shell/src/utils/string_set.h */
 #ifndef INT_SET_SENTRY
 #define INT_SET_SENTRY
 

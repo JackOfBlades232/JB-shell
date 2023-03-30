@@ -1,4 +1,4 @@
-/* Toy-Shell/src/string_set.c */
+/* Toy-Shell/src/utils/string_set.c */
 #include "string_set.h"
 
 #include <stddef.h>

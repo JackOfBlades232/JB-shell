@@ -1,4 +1,4 @@
-/* Toy-Shell/src/line_tokenization.h */
+/* Toy-Shell/src/tokeniz/line_tokenization.h */
 #ifndef LINE_TOKENIZATION_SENTRY
 #define LINE_TOKENIZATION_SENTRY
 
