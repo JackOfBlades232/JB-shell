@@ -8,12 +8,6 @@ enum {
     word_cap_modifier = 2
 };
 
-struct word {
-    enum word_type wtype;
-    char *content;
-    int cap;
-};
-
 struct word *word_create(enum word_type wtype)
 {
     struct word *w;
@@ -31,8 +25,7 @@ struct word *word_create(enum word_type wtype)
 static int str_len(const char *word)
 {
     const char *wp;
-    for (wp = word; *wp; wp++)
-        {}
+    for (wp = word; *wp; wp++) {}
     return wp - word;
 }
 
@@ -62,14 +55,4 @@ void word_free(struct word *w)
 {
     free(w->content);
     free(w);
-}
-
-char *word_content(struct word *w)
-{
-    return w->content;
-}
-
-int word_is_separator(struct word *w)
-{
-    return w->wtype == separator;
 }

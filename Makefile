@@ -20,4 +20,4 @@ deps.mk: $(SRCMODULES)
 	$(CC) -MM $^ > $@
 
 clean:
-	rm -f src/*.o *.o prog test
+	rm -f $(OBJMODULES) *.o prog test

@@ -11,20 +11,18 @@
 
 static int word_is_end_separator(struct word *w)
 {
-    char *sep;
-    if (!word_is_separator(w))
+    if (w->wtype == regular_wrd)
         return 0;
-    sep = word_content(w);
     return 
-        strcmp(sep, "&") == 0 ||
-        strcmp(sep, ">") == 0 ||
-        strcmp(sep, "<") == 0 ||
-        strcmp(sep, ">>") == 0;
+        strcmp(w->content, "&") == 0 ||
+        strcmp(w->content, ">") == 0 ||
+        strcmp(w->content, "<") == 0 ||
+        strcmp(w->content, ">>") == 0;
 }
 
 static int word_is_inter_cmd_separator(struct word *w)
 {
-    return word_is_separator(w) && !word_is_end_separator(w);
+    return w->wtype == separator && !word_is_end_separator(w);
 }
 
 static int prepare_stdin_redirection(struct command_chain *cmd_chain,
@@ -40,8 +38,8 @@ static int prepare_stdin_redirection(struct command_chain *cmd_chain,
         return 0;
 
     w = word_list_pop_first(remaining_tokens);
-    if (!word_is_separator(w)) {
-        cmd->stdin_fd = open(word_content(w), O_RDONLY);
+    if (w->wtype == regular_wrd) {
+        cmd->stdin_fd = open(w->content, O_RDONLY);
         if (cmd->stdin_fd != -1)
             res = 1;
     }
@@ -64,8 +62,8 @@ static int prepare_stdout_redirection(struct command_chain *cmd_chain,
         return 0;
 
     w = word_list_pop_first(remaining_tokens);
-    if (!word_is_separator(w)) {
-        cmd->stdout_fd = open(word_content(w), mode, 0666);
+    if (w->wtype == regular_wrd) {
+        cmd->stdout_fd = open(w->content, mode, 0666);
         if (cmd->stdout_fd != -1)
             res = 1;
     }
@@ -79,17 +77,16 @@ static int process_end_separator(
         struct command_chain *cmd_chain,
         struct word_list *remaining_tokens)
 {
-    char *sep = word_content(w);
     int res = 0;
 
-    if (strcmp(sep, "&") == 0) {
+    if (strcmp(w->content, "&") == 0) {
         set_cmd_chain_to_background(cmd_chain);
         res = word_list_is_empty(remaining_tokens);
-    } else if (strcmp(sep, "<") == 0) {
+    } else if (strcmp(w->content, "<") == 0) {
         res = prepare_stdin_redirection(cmd_chain, remaining_tokens);
-    } else if (strcmp(sep, ">") == 0) {
+    } else if (strcmp(w->content, ">") == 0) {
         res = prepare_stdout_redirection(cmd_chain, remaining_tokens, 0);
-    } else if (strcmp(sep, ">>") == 0) {
+    } else if (strcmp(w->content, ">>") == 0) {
         res = prepare_stdout_redirection(cmd_chain, remaining_tokens, 1);
     }
 
@@ -130,22 +127,21 @@ static int process_inter_cmd_separator(
         struct command_chain *cmd_chain,
         struct word_list *remaining_tokens)
 {
-    char *sep = word_content(w);
     int res = 0;
 
-    if (strcmp(sep, "|") == 0) {
+    if (strcmp(w->content, "|") == 0) {
         res = try_add_cmd_to_pipe(cmd_chain);
-    } else if (strcmp(sep, "||") == 0) { /* not implemented */
+    } else if (strcmp(w->content, "||") == 0) { /* not implemented */
         res = -1;
-    } else if (strcmp(sep, "&") == 0) { /* will become inter-cmd */
+    } else if (strcmp(w->content, "&") == 0) { /* will become inter-cmd */
         res = -1;
-    } else if (strcmp(sep, "&&") == 0) {
+    } else if (strcmp(w->content, "&&") == 0) {
         res = -1;
-    } else if (strcmp(sep, "(") == 0) {
+    } else if (strcmp(w->content, "(") == 0) {
         res = -1;
-    } else if (strcmp(sep, ")") == 0) {
+    } else if (strcmp(w->content, ")") == 0) {
         res = -1;
-    } else if (strcmp(sep, ";") == 0) {
+    } else if (strcmp(w->content, ";") == 0) {
         res = -1;
     }
 
@@ -156,7 +152,7 @@ static int process_inter_cmd_separator(
 static void process_regular_word(struct word *w,
         struct command_chain *cmd_chain)
 {
-    add_arg_to_last_chain_cmd(cmd_chain, word_content(w));
+    add_arg_to_last_chain_cmd(cmd_chain, w->content);
     free(w); /* still need the content in cmd */
 }
 
