@@ -3,7 +3,7 @@
 #include "src/tokeniz/line_tokenization.h"
 #include "src/tokeniz/word_list.h"
 #include "src/execution/execute_command.h"
-#include "src/execution/cmd_res.h"
+#include "src/interpreter/interpreter.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -16,7 +16,6 @@ int main()
     struct word_list *words;
     int token_res;
 
-    struct command_res cmd_res;
     set_up_process_control();
 
     if (!isatty(0)) {
@@ -38,10 +37,9 @@ int main()
         }
 
         /* step 3: execution of the tokens by the interpreter */
-        // @TODO: remake to interpreter call (for recursiveness)
-        if (execute_cmd(words, &cmd_res) == 0)
-            put_cmd_res(stdout, &cmd_res);
+        interpret_and_run_cmd(words);
 
+        /* free resources */
         word_list_free(words);
     }
 

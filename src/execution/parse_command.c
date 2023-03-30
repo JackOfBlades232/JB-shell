@@ -129,21 +129,8 @@ static int process_inter_cmd_separator(
 {
     int res = 0;
 
-    if (strcmp(w->content, "|") == 0) {
+    if (strcmp(w->content, "|") == 0)
         res = try_add_cmd_to_pipe(cmd_chain);
-    } else if (strcmp(w->content, "||") == 0) { /* not implemented */
-        res = -1;
-    } else if (strcmp(w->content, "&") == 0) { /* will become inter-cmd */
-        res = -1;
-    } else if (strcmp(w->content, "&&") == 0) {
-        res = -1;
-    } else if (strcmp(w->content, "(") == 0) {
-        res = -1;
-    } else if (strcmp(w->content, ")") == 0) {
-        res = -1;
-    } else if (strcmp(w->content, ";") == 0) {
-        res = -1;
-    }
 
     word_free(w);
     return res;

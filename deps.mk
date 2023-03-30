@@ -1,10 +1,8 @@
 string_set.o: src/utils/string_set.c src/utils/string_set.h
 int_set.o: src/utils/int_set.c src/utils/int_set.h
-prompt.o: src/interpreter/prompt.c src/interpreter/prompt.h \
- src/interpreter/../edit/input.h \
- src/interpreter/../tokeniz/line_tokenization.h \
- src/interpreter/../tokeniz/word_list.h src/interpreter/../tokeniz/word.h \
- src/interpreter/../tokeniz/word_list.h \
+interpreter.o: src/interpreter/interpreter.c \
+ src/interpreter/interpreter.h src/interpreter/../tokeniz/word_list.h \
+ src/interpreter/../tokeniz/word.h \
  src/interpreter/../execution/execute_command.h \
  src/interpreter/../execution/../tokeniz/word_list.h \
  src/interpreter/../execution/command.h \
