@@ -125,8 +125,5 @@ int tokenize_input_line_to_word_list(char *line, struct word_list **out_words)
 
     if (status != 0)
         word_list_free(*out_words);
-
-    free(line);
-
     return status;
 }

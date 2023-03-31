@@ -83,6 +83,6 @@ Shell-VII: (5_40)
 * Reorganize files and funcs between execution and interpreter folders
 * Reimplement & as a chain-level separator for launching first prog in bg
     and second in fg
-- Rule out empty pipes before &, &&, ||
-- Check for mem leaks
+* Rule out empty pipes before &, &&, ||
+* Check for mem leaks
 - Add () for recursive calls to the command interpreter as proc

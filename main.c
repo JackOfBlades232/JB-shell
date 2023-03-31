@@ -6,6 +6,7 @@
 #include "src/interpreter/interpreter.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -33,6 +34,7 @@ int main()
         token_res = tokenize_input_line_to_word_list(line, &words);
         if (token_res != 0) {
             printf("Invalid command\n");
+            free(line);
             continue;
         }
 
@@ -41,6 +43,7 @@ int main()
 
         /* free resources */
         word_list_free(words);
+        free(line);
     }
 
     putchar('\n');
