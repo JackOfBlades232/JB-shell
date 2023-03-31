@@ -260,6 +260,12 @@ static struct command_pipe *parse_tokens_to_cmd_pipe(
     }
 }
 
+int seq_node_is_valid(struct pipe_sequence_node *node)
+{
+    return !cmd_pipe_is_empty(node->pipe) ||
+        (node->rule == none || node->rule == always);
+}
+
 struct pipe_sequence *parse_tokens_to_pipe_seq(struct word_list *tokens)
 {
     struct pipe_sequence *pipe_seq;
@@ -276,6 +282,10 @@ struct pipe_sequence *parse_tokens_to_pipe_seq(struct word_list *tokens)
         }
 
         add_pipe_to_seq(pipe_seq, cmd_pipe, rule);
+        if (!seq_node_is_valid(pipe_seq->last)) {
+            free_pipe_seq(pipe_seq);
+            return NULL;
+        }
     }
 
     return pipe_seq;
