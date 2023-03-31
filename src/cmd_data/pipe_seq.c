@@ -1,6 +1,5 @@
 /* Toy-Shell/src/cmd_data/cmd_pipe.h */
-#include "pipe_seq.h"
-#include "cmd_pipe.h"
+#include "cmd_data.h"
 
 #include <stdio.h>
 #include <stdlib.h>

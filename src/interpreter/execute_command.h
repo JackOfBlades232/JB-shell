@@ -4,7 +4,7 @@
 #define EXECUTE_COMMAND_SENTRY
 
 #include "../tokeniz/word_list.h"
-#include "../cmd_data/pipe_seq.h"
+#include "../cmd_data/cmd_data.h"
 #include "cmd_res.h"
 
 #include <stdio.h>

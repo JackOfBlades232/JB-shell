@@ -1,5 +1,5 @@
 /* Toy-Shell/src/cmd_data/command.h */
-#include "command.h"
+#include "cmd_data.h"
 
 #include <stdio.h>
 #include <stdlib.h>

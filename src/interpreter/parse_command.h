@@ -3,7 +3,7 @@
 #define PARSE_COMMAND_SENTRY
 
 #include "../tokeniz/word_list.h"
-#include "../cmd_data/pipe_seq.h"
+#include "../cmd_data/cmd_data.h"
 
 struct pipe_sequence *parse_tokens_to_pipe_seq(struct word_list *tokens);
 

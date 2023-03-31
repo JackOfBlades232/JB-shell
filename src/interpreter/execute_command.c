@@ -2,8 +2,7 @@
 #include "execute_command.h"
 #include "parse_command.h"
 #include "cmd_res.h"
-#include "../cmd_data/pipe_seq.h"
-#include "../cmd_data/cmd_pipe.h"
+#include "../cmd_data/cmd_data.h"
 #include "../utils/int_set.h"
 
 #include <signal.h>
