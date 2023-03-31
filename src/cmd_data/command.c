@@ -7,13 +7,29 @@
 
 enum { base_argv_cap = 10, argv_cap_mult = 2 };
 
-void init_cmd(struct command *cp)
+void init_exec_cmd(struct command *cp)
 {
     cp->cmd_name = NULL;
     cp->argc = 0;
     cp->argv = malloc(base_argv_cap * sizeof(char *));
     *(cp->argv) = NULL;
     cp->argv_cap = base_argv_cap;
+
+    /* weirdest bug in my life workaround */
+    cp->rec_seq = create_pipe_seq(); 
+
+    cp->stdin_fd = -1;
+    cp->stdout_fd = -1;
+}
+
+void init_rec_cmd(struct command *cp)
+{
+    cp->cmd_name = strdup("()");
+    cp->rec_seq = create_pipe_seq();
+
+    cp->argv = NULL;
+    cp->argc = 0;
+    cp->argv_cap = 0;
 
     cp->stdin_fd = -1;
     cp->stdout_fd = -1;
@@ -22,9 +38,17 @@ void init_cmd(struct command *cp)
 void free_cmd(struct command *cp) 
 {
     char **argvp;
-    for (argvp = cp->argv; *argvp; argvp++)
-        free(*argvp);
-    free(cp->argv);
+
+    if (cp->argv) {
+        for (argvp = cp->argv; *argvp; argvp++)
+            free(*argvp);
+        free(cp->argv);
+    } else if (cp->cmd_name)
+        free(cp->cmd_name);
+
+    if (cp->rec_seq)
+        free_pipe_seq(cp->rec_seq);
+    
     free(cp);
 }
 

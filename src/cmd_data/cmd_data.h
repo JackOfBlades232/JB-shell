@@ -11,10 +11,17 @@ typedef void (*command_modifier)(struct command *);
 enum pipe_sequence_rule { none, always, if_success, if_failed, to_bg };
 
 struct command {
-    char *cmd_name;
+    char *cmd_name; /* () for rec call */
+
+    /* exec cmd */
     int argc;
     char **argv;
     int argv_cap;
+
+    /* rec interpreter call */
+    struct pipe_sequence *rec_seq;
+
+    /* io redir for proc */
     int stdin_fd, stdout_fd;
 };
 
@@ -29,7 +36,8 @@ struct pipe_sequence {
 };
 
 /* command */
-void init_cmd(struct command *cp);
+void init_exec_cmd(struct command *cp);
+void init_rec_cmd(struct command *cp);
 void free_cmd(struct command *cp);
 int cmd_is_empty(struct command *cp);
 void add_arg_to_cmd(struct command *cp, char *arg);
@@ -41,7 +49,7 @@ void free_cmd_pipe(struct command_pipe *cc);
 int cmd_pipe_is_empty(struct command_pipe *cc);
 int cmd_pipe_len(struct command_pipe *cc);
 
-struct command *add_cmd_to_pipe(struct command_pipe *cc);
+struct command *add_cmd_to_pipe(struct command_pipe *cc, int is_exec);
 int delete_first_cmd_from_pipe(struct command_pipe *cc);
 struct command *get_first_cmd_in_pipe(struct command_pipe *cc);
 struct command *get_last_cmd_in_pipe(struct command_pipe *cc);

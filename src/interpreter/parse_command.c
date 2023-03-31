@@ -134,7 +134,7 @@ static int try_add_cmd_to_pipe(struct command_pipe *cmd_pipe)
     if (last_cmd == NULL || cmd_is_empty(last_cmd))
         return 0;
 
-    new_cmd = add_cmd_to_pipe(cmd_pipe);
+    new_cmd = add_cmd_to_pipe(cmd_pipe, 1);
     return prepare_pipe_for_two_commands(last_cmd, new_cmd);
 }
 
@@ -160,7 +160,7 @@ static void process_regular_word(struct word *w,
         struct command_pipe *cmd_pipe)
 {
     if (cmd_pipe_is_empty(cmd_pipe))
-        add_cmd_to_pipe(cmd_pipe);
+        add_cmd_to_pipe(cmd_pipe, 1);
 
     add_arg_to_last_pipe_cmd(cmd_pipe, w->content);
     free(w); /* still need the content in cmd */
