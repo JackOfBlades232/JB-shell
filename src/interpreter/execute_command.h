@@ -1,10 +1,10 @@
-/* Toy-Shell/src/execution/execute_command.h */
+/* Toy-Shell/src/interpreter/execute_command.h */
 
 #ifndef EXECUTE_COMMAND_SENTRY
 #define EXECUTE_COMMAND_SENTRY
 
 #include "../tokeniz/word_list.h"
-#include "pipe_seq.h"
+#include "../cmd_data/pipe_seq.h"
 #include "cmd_res.h"
 
 #include <stdio.h>

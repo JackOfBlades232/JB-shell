@@ -1,4 +1,4 @@
-/* Toy-Shell/src/execution/cmd_pipe.h */
+/* Toy-Shell/src/cmd_data/cmd_pipe.h */
 #ifndef CMD_PIPE_SENTRY
 #define CMD_PIPE_SENTRY
 

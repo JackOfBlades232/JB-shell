@@ -2,7 +2,7 @@
 #include "src/edit/input.h"
 #include "src/tokeniz/line_tokenization.h"
 #include "src/tokeniz/word_list.h"
-#include "src/execution/execute_command.h"
+#include "src/interpreter/execute_command.h"
 #include "src/interpreter/interpreter.h"
 
 #include <stdio.h>

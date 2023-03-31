@@ -1,4 +1,4 @@
-/* Toy-Shell/src/execution/pipe_seq.h */
+/* Toy-Shell/src/cmd_data/pipe_seq.h */
 #ifndef PIPE_SEQ_SENTRY
 #define PIPE_SEQ_SENTRY
 

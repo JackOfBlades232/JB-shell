@@ -1,4 +1,4 @@
-SRCMODULES = $(shell find src/ -type f -name '*.c')
+SRCMODULES = $(shell find src -type f -name '*.c')
 OBJMODULES = $(SRCMODULES:.c=.o)
 CC = gcc
 CFLAGS = -g -Wall
@@ -20,4 +20,4 @@ deps.mk: $(SRCMODULES)
 	$(CC) -MM $^ > $@
 
 clean:
-	rm -f $(OBJMODULES) *.o prog test
+	rm -f $(OBJMODULES) src/*.o *.o prog test

@@ -1,4 +1,4 @@
-/* Toy-Shell/src/execution/cmd_pipe.h */
+/* Toy-Shell/src/cmd_data/cmd_pipe.h */
 #include "cmd_pipe.h"
 #include "command.h"
 

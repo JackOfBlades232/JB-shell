@@ -1,10 +1,10 @@
 /* Toy-Shell/src/execution/execute_command.c */
 #include "execute_command.h"
-#include "cmd_pipe.h"
-#include "cmd_res.h"
 #include "parse_command.h"
+#include "cmd_res.h"
+#include "../cmd_data/pipe_seq.h"
+#include "../cmd_data/cmd_pipe.h"
 #include "../utils/int_set.h"
-#include "pipe_seq.h"
 
 #include <signal.h>
 #include <errno.h>

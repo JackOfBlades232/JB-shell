@@ -1,8 +1,8 @@
 /* Toy-Shell/src/execution/parse_command.c */
 #include "parse_command.h"
-#include "cmd_pipe.h"
-#include "command.h"
-#include "pipe_seq.h"
+#include "../cmd_data/pipe_seq.h"
+#include "../cmd_data/cmd_pipe.h"
+#include "../cmd_data/command.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -150,7 +150,7 @@ static int process_inter_cmd_separator(
         struct command_pipe *cmd_pipe,
         struct word_list *remaining_tokens)
 {
-    int res;
+    int res = 0;
 
     if (strcmp(w->content, "|") == 0)
         res = try_add_cmd_to_pipe(cmd_pipe);

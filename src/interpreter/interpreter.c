@@ -1,8 +1,8 @@
 /* Toy-Shell/src/interpreter/interpreter.c */
 #include "interpreter.h"
-#include "../execution/parse_command.h"
-#include "../execution/execute_command.h"
-#include "../execution/cmd_res.h"
+#include "parse_command.h"
+#include "execute_command.h"
+#include "cmd_res.h"
 
 #include <stdio.h>
 
