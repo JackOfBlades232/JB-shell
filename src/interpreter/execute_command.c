@@ -271,8 +271,7 @@ int execute_seq(struct pipe_sequence *pipe_seq, struct command_res *res)
                     break;
                 else
                     goto break_while;
-            case to_bg:
-                // @TODO: implement
+            case to_bg: /* didn't wait */
                 break;
         }
     }

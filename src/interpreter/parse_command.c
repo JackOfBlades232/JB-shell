@@ -20,7 +20,7 @@ static int is_pipe_end(struct word *w)
         return 0;
     return 
         strcmp(w->content, ";") == 0 ||
-        // strcmp(w->content, "&") == 0 ||
+        strcmp(w->content, "&") == 0 ||
         strcmp(w->content, "&&") == 0 ||
         strcmp(w->content, "||") == 0;
 }
@@ -30,7 +30,6 @@ static int word_is_pipe_end_separator(struct word *w)
     if (w->wtype == regular_wrd)
         return 0;
     return 
-        strcmp(w->content, "&") == 0 || // remove
         strcmp(w->content, ">") == 0 ||
         strcmp(w->content, "<") == 0 ||
         strcmp(w->content, ">>") == 0;
@@ -102,10 +101,7 @@ static int process_end_separator(
         return 0;
     }
 
-    if (strcmp(w->content, "&") == 0) {
-        set_cmd_pipe_to_background(cmd_pipe);
-        res = word_list_is_empty(remaining_tokens);
-    } else if (strcmp(w->content, "<") == 0) {
+    if (strcmp(w->content, "<") == 0) {
         res = prepare_stdin_redirection(cmd_pipe, remaining_tokens);
     } else if (strcmp(w->content, ">") == 0) {
         res = prepare_stdout_redirection(cmd_pipe, remaining_tokens, 0);
@@ -253,6 +249,8 @@ static struct command_pipe *parse_tokens_to_cmd_pipe(
 
     if (parse_res) {
         *rule_out = get_sequence_rule_of_word(last_w);
+        if (*rule_out == to_bg)
+            set_cmd_pipe_to_background(cmd_pipe);
         if (last_w)
             word_free(last_w);
         return cmd_pipe;
