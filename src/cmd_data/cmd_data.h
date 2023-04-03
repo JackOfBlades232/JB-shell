@@ -36,6 +36,7 @@ struct pipe_sequence {
 };
 
 /* command */
+void pre_init_cmd(struct command *cp);
 void init_exec_cmd(struct command *cp);
 void init_rec_cmd(struct command *cp);
 void free_cmd(struct command *cp);

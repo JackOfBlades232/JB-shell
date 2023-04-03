@@ -248,7 +248,7 @@ int execute_seq(struct pipe_sequence *pipe_seq, struct command_res *res)
     struct pipe_sequence_node *node;
 
     if (!pipe_seq->first)
-        return 0;
+        return 1;
 
     while (pipe_seq->first) {
         node = pop_first_node_from_seq(pipe_seq);
@@ -276,7 +276,7 @@ int execute_seq(struct pipe_sequence *pipe_seq, struct command_res *res)
     }
 
 break_while:
-    return 1;
+    return 0;
 }
 
 void put_cmd_res(FILE *f, struct command_res *res)

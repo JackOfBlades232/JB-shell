@@ -139,7 +139,7 @@ static int try_add_cmd_to_pipe(struct command_pipe *cmd_pipe)
         *last_cmd = get_last_cmd_in_pipe(cmd_pipe),
         *new_cmd;
 
-    if (last_cmd == NULL || cmd_is_empty(last_cmd))
+    if (cmd_is_empty(last_cmd))
         return 0;
 
     new_cmd = add_cmd_to_pipe(cmd_pipe);
@@ -215,7 +215,10 @@ static int parse_recursive_call(
     }
 
     rec_tokens->last = pre_prev;
-    pre_prev->next = NULL;
+    if (pre_prev)
+        pre_prev->next = NULL;
+    else
+        rec_tokens->first = NULL;
     free_word_item(prev); // free last )
     
     free_pipe_seq(last_cmd->rec_seq);

@@ -55,8 +55,7 @@ struct command *add_cmd_to_pipe(struct command_pipe *cc)
     struct command_pipe_node *tmp;
     tmp = malloc(sizeof(struct command_pipe_node));
     tmp->cmd = malloc(sizeof(struct command));
-    tmp->cmd->argv = NULL; /* uninitialized */
-    tmp->cmd->cmd_name = NULL;
+    pre_init_cmd(tmp->cmd);
     tmp->next = NULL;
 
     if (cc->first == NULL) {
