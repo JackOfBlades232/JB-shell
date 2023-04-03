@@ -4,8 +4,14 @@
 
 #include "word.h"
 
-struct word_item;
-struct word_list;
+struct word_item {
+    struct word *wrd;
+    struct word_item *next;
+};
+
+struct word_list {
+    struct word_item *first, *last;
+};
 
 struct word_list *word_list_create();
 void word_list_add_item(struct word_list *lst, enum word_type wtype);

@@ -3,15 +3,6 @@
 
 #include <stdlib.h>
 
-struct word_item {
-    struct word *wrd;
-    struct word_item *next;
-};
-
-struct word_list {
-    struct word_item *first, *last;
-};
-
 struct word_list *word_list_create()
 {
     struct word_list *lst = malloc(sizeof(struct word_list));
