@@ -50,17 +50,14 @@ int cmd_pipe_len(struct command_pipe *cc)
     return len;
 }
 
-struct command *add_cmd_to_pipe(struct command_pipe *cc, int is_exec)
+struct command *add_cmd_to_pipe(struct command_pipe *cc)
 {
     struct command_pipe_node *tmp;
     tmp = malloc(sizeof(struct command_pipe_node));
     tmp->cmd = malloc(sizeof(struct command));
+    tmp->cmd->argv = NULL; /* uninitialized */
+    tmp->cmd->cmd_name = NULL;
     tmp->next = NULL;
-
-    if (is_exec)
-        init_exec_cmd(tmp->cmd);
-    else
-        init_rec_cmd(tmp->cmd);
 
     if (cc->first == NULL) {
         cc->first = tmp;

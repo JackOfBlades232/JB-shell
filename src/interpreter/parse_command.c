@@ -142,7 +142,8 @@ static int try_add_cmd_to_pipe(struct command_pipe *cmd_pipe)
     if (last_cmd == NULL || cmd_is_empty(last_cmd))
         return 0;
 
-    new_cmd = add_cmd_to_pipe(cmd_pipe, 1);
+    new_cmd = add_cmd_to_pipe(cmd_pipe);
+    init_exec_cmd(get_last_cmd_in_pipe(cmd_pipe));
     return prepare_pipe_for_two_commands(last_cmd, new_cmd);
 }
 
@@ -163,8 +164,10 @@ static int process_inter_cmd_separator(
 static void process_regular_word(struct word *w,
         struct command_pipe *cmd_pipe)
 {
-    if (cmd_pipe_is_empty(cmd_pipe))
-        add_cmd_to_pipe(cmd_pipe, 1);
+    if (cmd_pipe_is_empty(cmd_pipe)) {
+        add_cmd_to_pipe(cmd_pipe);
+        init_exec_cmd(get_last_cmd_in_pipe(cmd_pipe));
+    }
 
     add_arg_to_last_pipe_cmd(cmd_pipe, w->content);
     free(w); /* still need the content in cmd */
@@ -176,6 +179,21 @@ static int parse_recursive_call(
         )
 {
     // @TODO: implement
+
+    // Step 0: if accum command exists and is not empty: fail
+    // else if no command, create a rec one?
+
+    // Step 1: cut out list until pb 0 or eol (keep prev & pre-prev)
+    // if eol, throw error down the line
+    // else pre-prev -> last of cut list, cur->tokens.first
+    
+    // Step 1.5: Free ) w_i
+    
+    // Step 2: parse what we got into chain
+    // If failed, pass fail down the line
+    
+    // @TODO make it so that after a () only a | or end of pipe may commence
+
     return 0;
 }
 

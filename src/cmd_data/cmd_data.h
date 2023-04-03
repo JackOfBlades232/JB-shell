@@ -49,7 +49,7 @@ void free_cmd_pipe(struct command_pipe *cc);
 int cmd_pipe_is_empty(struct command_pipe *cc);
 int cmd_pipe_len(struct command_pipe *cc);
 
-struct command *add_cmd_to_pipe(struct command_pipe *cc, int is_exec);
+struct command *add_cmd_to_pipe(struct command_pipe *cc);
 int delete_first_cmd_from_pipe(struct command_pipe *cc);
 struct command *get_first_cmd_in_pipe(struct command_pipe *cc);
 struct command *get_last_cmd_in_pipe(struct command_pipe *cc);
