@@ -82,9 +82,20 @@ static int execute_next_command(struct command_pipe *cmd_pipe)
             dup2(cmd->stdout_fd, STDOUT_FILENO);
         close_all_additional_descriptors(cmd_pipe);
 
-        execvp(cmd->cmd_name, cmd->argv);
-        perror(cmd->cmd_name);
-        _exit(1);
+        if (cmd_is_rec(cmd)) {
+            struct command_res cmd_res;
+
+            if (cmd->rec_seq->first) {
+                execute_seq(cmd->rec_seq, &cmd_res);
+                _exit(cmd_res.type == exited ? cmd_res.code : 1);
+            } else
+                _exit(0);
+        } else {
+            execvp(cmd->cmd_name, cmd->argv);
+
+            perror(cmd->cmd_name);
+            _exit(1);
+        }
     } 
 
     close_additional_descriptors(cmd);

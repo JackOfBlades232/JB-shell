@@ -86,3 +86,6 @@ Shell-VII: (5_40)
 * Rule out empty pipes before &, &&, ||
 * Check for mem leaks
 - Add () for recursive calls to the command interpreter as proc
+    - BUG: (cat) mm works & freezes, but should not
+    - STATE: single commands with <>>> work in (), and work with others.
+        Pipes in () freeze. Links in () work. Not checked &.
