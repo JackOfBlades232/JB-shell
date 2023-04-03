@@ -34,12 +34,12 @@ static int word_is_pipe_end_separator(struct word *w)
 
 static int word_is_open_paren(struct word *w)
 {
-    return w->wtype == separator && strcmp(w->content, "(");
+    return w->wtype == separator && strcmp(w->content, "(") == 0;
 }
 
 static int word_is_close_paren(struct word *w)
 {
-    return w->wtype == separator && strcmp(w->content, ")");
+    return w->wtype == separator && strcmp(w->content, ")") == 0;
 }
 
 static int word_is_inter_cmd_separator(struct word *w)
@@ -193,11 +193,11 @@ static int parse_main_command_part(
         else if (word_is_close_paren(w))
             return 0;
         else if (word_is_open_paren(w)) {
-            printf("Open paren\n");
             sep_res = parse_recursive_call(cmd_pipe, tokens);
             if (!sep_res)
                 return 0;
         } else if (word_is_inter_cmd_separator(w)) {
+            printf("INter\n");
             sep_res = process_inter_cmd_separator(w, cmd_pipe, tokens);
             if (sep_res <= 0)
                 return 0;
