@@ -44,7 +44,7 @@ static int word_is_close_paren(struct word *w)
 
 static int word_is_inter_cmd_separator(struct word *w)
 {
-    return w->wtype == separator && strcmp(w->content, "|");
+    return w->wtype == separator && strcmp(w->content, "|") == 0;
 }
 
 static int prepare_stdin_redirection(struct command_pipe *cmd_pipe,
@@ -143,7 +143,6 @@ static int try_add_cmd_to_pipe(struct command_pipe *cmd_pipe)
         return 0;
 
     new_cmd = add_cmd_to_pipe(cmd_pipe);
-    init_exec_cmd(get_last_cmd_in_pipe(cmd_pipe));
     return prepare_pipe_for_two_commands(last_cmd, new_cmd);
 }
 
@@ -161,16 +160,21 @@ static int process_inter_cmd_separator(
     return res;
 }
 
-static void process_regular_word(struct word *w,
+static int process_regular_word(struct word *w,
         struct command_pipe *cmd_pipe)
 {
-    if (cmd_pipe_is_empty(cmd_pipe)) {
-        add_cmd_to_pipe(cmd_pipe);
-        init_exec_cmd(get_last_cmd_in_pipe(cmd_pipe));
+    struct command *last_cmd = get_last_cmd_in_pipe(cmd_pipe);
+
+    if (cmd_is_uninitialized(last_cmd))
+        init_exec_cmd(last_cmd);
+    else if (cmd_is_rec(last_cmd)) {
+        word_free(w);
+        return 0;
     }
 
     add_arg_to_last_pipe_cmd(cmd_pipe, w->content);
     free(w); /* still need the content in cmd */
+    return 1;
 }
 
 static int parse_recursive_call(
@@ -178,23 +182,50 @@ static int parse_recursive_call(
         struct word_list *tokens
         )
 {
-    // @TODO: implement
+    struct command *last_cmd = get_last_cmd_in_pipe(cmd_pipe);
 
-    // Step 0: if accum command exists and is not empty: fail
-    // else if no command, create a rec one?
+    struct word_list *rec_tokens;
+    struct word_item *pre_prev, *prev;
+    int paren_balance = 1; // 1 for one open (
 
-    // Step 1: cut out list until pb 0 or eol (keep prev & pre-prev)
-    // if eol, throw error down the line
-    // else pre-prev -> last of cut list, cur->tokens.first
-    
-    // Step 1.5: Free ) w_i
-    
-    // Step 2: parse what we got into chain
-    // If failed, pass fail down the line
-    
-    // @TODO make it so that after a () only a | or end of pipe may commence
+    if (!cmd_is_uninitialized(last_cmd))
+        return 0;
+    init_rec_cmd(last_cmd);
 
-    return 0;
+    rec_tokens = word_list_create();
+    prev = pre_prev = NULL;
+    rec_tokens->first = tokens->first;
+
+    // cut out to end of list or till all ( matched
+    while (tokens->first && paren_balance > 0) {
+        if (word_is_open_paren(tokens->first->wrd))
+            paren_balance++;
+        else if (word_is_close_paren(tokens->first->wrd))
+            paren_balance--;
+
+        pre_prev = prev;
+        prev = tokens->first;
+        tokens->first = tokens->first->next;
+    }
+
+    if (paren_balance != 0) {
+        word_list_free(rec_tokens);
+        tokens->last = NULL;
+        return 0;
+    }
+
+    rec_tokens->last = pre_prev;
+    pre_prev->next = NULL;
+    free_word_item(prev); // free last )
+    
+    free_pipe_seq(last_cmd->rec_seq);
+    last_cmd->rec_seq = parse_tokens_to_pipe_seq(rec_tokens);
+    if (last_cmd->rec_seq == NULL) {
+        word_list_free(rec_tokens);
+        return 0;
+    }
+
+    return 1;
 }
 
 static int parse_main_command_part(
@@ -204,6 +235,8 @@ static int parse_main_command_part(
 {
     struct word *w;
     int sep_res;
+
+    add_cmd_to_pipe(cmd_pipe);
 
     while (!is_pipe_end(w = word_list_pop_first(tokens))) {
         if (word_is_pipe_end_separator(w))
@@ -215,7 +248,6 @@ static int parse_main_command_part(
             if (!sep_res)
                 return 0;
         } else if (word_is_inter_cmd_separator(w)) {
-            printf("INter\n");
             sep_res = process_inter_cmd_separator(w, cmd_pipe, tokens);
             if (sep_res <= 0)
                 return 0;

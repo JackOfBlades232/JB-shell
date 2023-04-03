@@ -39,7 +39,9 @@ struct pipe_sequence {
 void init_exec_cmd(struct command *cp);
 void init_rec_cmd(struct command *cp);
 void free_cmd(struct command *cp);
+int cmd_is_uninitialized(struct command *cp);
 int cmd_is_empty(struct command *cp);
+int cmd_is_rec(struct command *cp);
 void add_arg_to_cmd(struct command *cp, char *arg);
 
 /* pipe */

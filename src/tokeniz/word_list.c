@@ -3,6 +3,12 @@
 
 #include <stdlib.h>
 
+void free_word_item(struct word_item *wi)
+{
+    word_free(wi->wrd);
+    free(wi);
+}
+
 struct word_list *word_list_create()
 {
     struct word_list *lst = malloc(sizeof(struct word_list));
@@ -32,12 +38,6 @@ int word_list_add_letter_to_last(struct word_list *lst, char c)
 
     lst->last->wrd = word_add_char(lst->last->wrd, c);
     return 1;
-}
-
-static void free_word_item(struct word_item *wi)
-{
-    word_free(wi->wrd);
-    free(wi);
 }
 
 struct word *word_list_pop_first(struct word_list *lst)

@@ -13,6 +13,8 @@ struct word_list {
     struct word_item *first, *last;
 };
 
+void free_word_item(struct word_item *wi);
+
 struct word_list *word_list_create();
 void word_list_add_item(struct word_list *lst, enum word_type wtype);
 int word_list_add_letter_to_last(struct word_list *lst, char c);

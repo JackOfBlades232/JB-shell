@@ -52,9 +52,19 @@ void free_cmd(struct command *cp)
     free(cp);
 }
 
+int cmd_is_uninitialized(struct command *cp)
+{
+    return cp->argv == NULL && cp->cmd_name == NULL;
+}
+
 int cmd_is_empty(struct command *cp)
 {
     return cp->cmd_name == NULL;
+}
+
+int cmd_is_rec(struct command *cp)
+{
+    return cp->cmd_name && strcmp(cp->cmd_name, "()") == 0;
 }
 
 static char **resize_argv(char **argv, int *cur_cap) 
