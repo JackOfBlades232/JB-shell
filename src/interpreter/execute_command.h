@@ -9,7 +9,7 @@
 #include <stdio.h>
 
 void set_up_process_control();
-void close_all_pipe_desriptors(struct command_pipe *cmd_pipe);
+void close_all_pipe_desriptors_rec(struct command_pipe *cmd_pipe);
 int execute_seq(struct pipe_sequence *pipe_seq, struct command_res *res);
 void put_cmd_res(FILE *f, struct command_res *res);
 

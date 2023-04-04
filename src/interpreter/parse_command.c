@@ -238,7 +238,7 @@ static int parse_main_command_part(
         struct word **next_w)
 {
     struct word *w;
-    int sep_res;
+    int parse_res;
 
     add_cmd_to_pipe(cmd_pipe);
 
@@ -246,17 +246,16 @@ static int parse_main_command_part(
         if (word_is_pipe_end_separator(w))
             break;
         else if (word_is_close_paren(w))
+            parse_res = 0;
+        else if (word_is_open_paren(w))
+            parse_res = parse_recursive_call(cmd_pipe, tokens);
+        else if (word_is_inter_cmd_separator(w))
+            parse_res = process_inter_cmd_separator(w, cmd_pipe, tokens);
+        else
+            parse_res = process_regular_word(w, cmd_pipe);
+
+        if (!parse_res)
             return 0;
-        else if (word_is_open_paren(w)) {
-            sep_res = parse_recursive_call(cmd_pipe, tokens);
-            if (!sep_res)
-                return 0;
-        } else if (word_is_inter_cmd_separator(w)) {
-            sep_res = process_inter_cmd_separator(w, cmd_pipe, tokens);
-            if (sep_res <= 0)
-                return 0;
-        } else 
-            process_regular_word(w, cmd_pipe);
     }
 
     *next_w = w;
@@ -326,7 +325,7 @@ static struct command_pipe *parse_tokens_to_cmd_pipe(
             word_free(last_w);
         return cmd_pipe;
     } else {
-        close_all_pipe_desriptors(cmd_pipe);
+        close_all_pipe_desriptors_rec(cmd_pipe);
         free_cmd_pipe(cmd_pipe);
         return NULL;
     }

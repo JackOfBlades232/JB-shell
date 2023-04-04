@@ -86,8 +86,10 @@ Shell-VII: (5_40)
 * Rule out empty pipes before &, &&, ||
 * Check for mem leaks
 - Add () for recursive calls to the command interpreter as proc
-    - BUG: (cat) mm works & freezes, but should not
+    * BUG: (cat) mm works & freezes, but should not
     - STATE: single commands with <>>> work in (), and work with others.
-        Pipes in () freeze. Links in () work. Not checked &.
+        Pipes in () work. Links in () work. Not checked &.
+    - BUG : random segfaults, malloc_cons bug on double
+        (ls | cat | wc -l) | cat | wc -l >> mm && cat mm && rm mm
 
 * Fix: after failed parsing close all descriptors

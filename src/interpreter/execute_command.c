@@ -52,15 +52,42 @@ static void try_execute_cd(struct command *cmd, struct command_res *res)
 
 static void close_additional_descriptors(struct command *cmd)
 {
-    if (cmd->stdin_fd != -1 && cmd->stdin_fd != STDIN_FILENO)
+    if (cmd->stdin_fd != -1 && cmd->stdin_fd != STDIN_FILENO) {
         close(cmd->stdin_fd);
-    if (cmd->stdout_fd != -1 && cmd->stdout_fd != STDOUT_FILENO)
+        cmd->stdin_fd = -1;
+    } if (cmd->stdout_fd != -1 && cmd->stdout_fd != STDOUT_FILENO) {
         close(cmd->stdout_fd);
+        cmd->stdout_fd = -1; 
+    }
 }
 
-void close_all_pipe_desriptors(struct command_pipe *cmd_pipe)
+static void close_all_pipe_desriptors(struct command_pipe *cmd_pipe)
 {
     map_to_all_cmds_in_pipe(cmd_pipe, close_additional_descriptors);
+}
+
+static void try_close_rec_cmd_descriptors(struct command *cmd)
+{
+    struct pipe_sequence_node *node;
+
+    if (!cmd_is_rec(cmd))
+        return;
+
+    for (node = cmd->rec_seq->first; node; node = node->next) {
+        if (node->pipe)
+            close_all_pipe_desriptors(node->pipe);
+    }
+}
+
+static void close_all_descriptors(struct command *cmd)
+{
+    close_additional_descriptors(cmd);
+    try_close_rec_cmd_descriptors(cmd);
+}
+
+void close_all_pipe_desriptors_rec(struct command_pipe *cmd_pipe)
+{
+    map_to_all_cmds_in_pipe(cmd_pipe, close_all_descriptors);
 }
 
 static int execute_next_command(struct command_pipe *cmd_pipe)
@@ -98,7 +125,7 @@ static int execute_next_command(struct command_pipe *cmd_pipe)
         }
     } 
 
-    close_additional_descriptors(cmd);
+    close_all_descriptors(cmd);
     delete_first_cmd_from_pipe(cmd_pipe);
 
     return pid;
@@ -216,7 +243,7 @@ void execute_pipe(struct command_pipe *cmd_pipe, struct command_res *res)
 
     /* create new group with intermediary g-leader proc and run command */
     pgid = run_proc_group(cmd_pipe);
-    close_all_pipe_desriptors(cmd_pipe);
+    close_all_pipe_desriptors_rec(cmd_pipe);
     if (pgid == -1) {
         res->type = failed;
         goto deinit;
