@@ -7,7 +7,8 @@ interpreter.o: src/interpreter/interpreter.c \
  src/interpreter/cmd_res.h
 parse_command.o: src/interpreter/parse_command.c \
  src/interpreter/parse_command.h src/interpreter/../tokeniz/word_list.h \
- src/interpreter/../tokeniz/word.h src/interpreter/../cmd_data/cmd_data.h
+ src/interpreter/../tokeniz/word.h src/interpreter/../cmd_data/cmd_data.h \
+ src/interpreter/execute_command.h src/interpreter/cmd_res.h
 execute_command.o: src/interpreter/execute_command.c \
  src/interpreter/execute_command.h src/interpreter/../tokeniz/word_list.h \
  src/interpreter/../tokeniz/word.h src/interpreter/../cmd_data/cmd_data.h \

@@ -89,3 +89,5 @@ Shell-VII: (5_40)
     - BUG: (cat) mm works & freezes, but should not
     - STATE: single commands with <>>> work in (), and work with others.
         Pipes in () freeze. Links in () work. Not checked &.
+
+* Fix: after failed parsing close all descriptors

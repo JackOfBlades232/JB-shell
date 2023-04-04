@@ -1,5 +1,6 @@
 /* Toy-Shell/src/execution/parse_command.c */
 #include "parse_command.h"
+#include "execute_command.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -325,6 +326,7 @@ static struct command_pipe *parse_tokens_to_cmd_pipe(
             word_free(last_w);
         return cmd_pipe;
     } else {
+        close_all_pipe_desriptors(cmd_pipe);
         free_cmd_pipe(cmd_pipe);
         return NULL;
     }

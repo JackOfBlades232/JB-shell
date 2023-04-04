@@ -58,7 +58,7 @@ static void close_additional_descriptors(struct command *cmd)
         close(cmd->stdout_fd);
 }
 
-static void close_all_additional_descriptors(struct command_pipe *cmd_pipe)
+void close_all_pipe_desriptors(struct command_pipe *cmd_pipe)
 {
     map_to_all_cmds_in_pipe(cmd_pipe, close_additional_descriptors);
 }
@@ -80,7 +80,7 @@ static int execute_next_command(struct command_pipe *cmd_pipe)
             dup2(cmd->stdin_fd, STDIN_FILENO);
         if (cmd->stdout_fd != -1)
             dup2(cmd->stdout_fd, STDOUT_FILENO);
-        close_all_additional_descriptors(cmd_pipe);
+        close_all_pipe_desriptors(cmd_pipe);
 
         if (cmd_is_rec(cmd)) {
             struct command_res cmd_res;
@@ -216,7 +216,7 @@ void execute_pipe(struct command_pipe *cmd_pipe, struct command_res *res)
 
     /* create new group with intermediary g-leader proc and run command */
     pgid = run_proc_group(cmd_pipe);
-    close_all_additional_descriptors(cmd_pipe);
+    close_all_pipe_desriptors(cmd_pipe);
     if (pgid == -1) {
         res->type = failed;
         goto deinit;
