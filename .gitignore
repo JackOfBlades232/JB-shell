@@ -37,6 +37,7 @@
 *.hex
 prog
 test
+build
 
 # Debug files
 *.dSYM/
