@@ -1,70 +1,17 @@
 /* Toy-Shell/main.c */
+#include "src/dynstring.h"
+#include "src/debug.h"
+
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <limits.h>
-#if USE_ASSERTIONS
-  #include <assert.h>
-#else
-  #define assert(_e)
-  #define static_assert(_e)
-#endif
 #include <unistd.h>
 
-/* @TODO
+/* @TODO(PKiyashko)
  * Write a parser (output -- tree)
  * Pull out and finish string (write dyn array if need be)
  * Pull out tokenizer
  */
 
-typedef struct string_tag {
-    char *p;
-    size_t len, cap;
-} string_t;
-
-static string_t string_make(const char *p) 
-{ 
-    string_t s; 
-    s.len = strlen(p);
-    s.cap = s.len + 1;
-    size_t byte_size = s.cap * sizeof(*s.p);
-    s.p = malloc(byte_size);
-    memcpy(s.p, p, byte_size);
-    return s;
-}
-
-static void string_release(string_t *s)
-{
-    assert(s->p);
-    s->p = NULL;
-    s->cap = s->len = 0;
-}
-
-static void string_clear(string_t *s)
-{
-    assert(s->p);
-    free(s->p);
-    string_release(s);
-}
-
-static void string_resize(string_t *s, size_t desired_cap)
-{
-    assert(s->p);
-    if (s->cap > desired_cap)
-        return;
-    while (s->cap <= desired_cap)
-        s->cap *= 2;
-    s->p = realloc(s->p, s->cap);
-}
-
-static void string_push_char(string_t *s, char c)
-{
-    assert(s->p);
-    if (s->len + 1 >= s->cap)
-        string_resize(s, s->len + 1);
-    s->p[s->len++] = c;
-    s->p[s->len] = '\0';
-}
 
 typedef enum token_type_tag {
     tt_eol,        // last token
@@ -72,6 +19,7 @@ typedef enum token_type_tag {
     tt_ident,      // anything
     tt_in,         // <
     tt_out,        // >
+    tt_append,     // >>
     tt_pipe,       // |
     tt_and,        // &&
     tt_or,         // ||
@@ -118,7 +66,8 @@ static token_t get_next_token(FILE *f)
 
         if (!is_screened && c == '"') {
             is_in_string = !is_in_string;
-            token_had_string = 1; // @NOTE: only first assignment is needed
+            // @NOTE(PKiyashko): only the first assignment is needed
+            token_had_string = 1;
             continue;
         }
 
@@ -139,8 +88,13 @@ static token_t get_next_token(FILE *f)
                 case '<':
                     tok.type = tt_in;
                     goto yield;
-                case '>':
-                    tok.type = tt_out;
+                case '>': // > or >>
+                    if ((c = fgetc(f)) == '>')
+                        tok.type = tt_append;
+                    else {
+                        tok.type = tt_out;
+                        ungetc(c, f);
+                    }
                     goto yield;
                 case '|': // | or ||
                     if ((c = fgetc(f)) == '|')
@@ -194,7 +148,7 @@ yield:
 
 int main()
 {
-    int is_term = isatty(STDOUT_FILENO);
+    int is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
 
     if (is_term)
         printf("> ");
@@ -222,6 +176,9 @@ int main()
                 break;
             case tt_out:
                 printf(">\n");
+                break;
+            case tt_append:
+                printf(">>\n");
                 break;
             case tt_pipe:
                 printf("|\n");
