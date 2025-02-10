@@ -1,34 +1,29 @@
 /* Toy-Shell/main.c */
-#include "src/dynstring.h"
-#include "src/debug.h"
+#include "def.h"
+#include "string.h"
+#include "debug.h"
 
 #include <stdio.h>
 #include <limits.h>
 #include <unistd.h>
-
-/* @TODO(PKiyashko)
- * Write a parser (output -- tree)
- * Pull out and finish string (write dyn array if need be)
- * Pull out tokenizer
- */
-
+#include <string.h>
 
 typedef enum token_type_tag {
-    tt_eol,        // last token
-    tt_eof,        // real eof
-    tt_ident,      // anything
-    tt_in,         // <
-    tt_out,        // >
-    tt_append,     // >>
-    tt_pipe,       // |
-    tt_and,        // &&
-    tt_or,         // ||
-    tt_semicolon,  // ;
-    tt_background, // &
-    tt_lparen,     // (
-    tt_rparen,     // )
+    e_tt_eol,        // last token
+    e_tt_eof,        // real eof
+    e_tt_ident,      // anything
+    e_tt_in,         // <
+    e_tt_out,        // >
+    e_tt_append,     // >>
+    e_tt_pipe,       // |
+    e_tt_and,        // &&
+    e_tt_or,         // ||
+    e_tt_semicolon,  // ;
+    e_tt_background, // &
+    e_tt_lparen,     // (
+    e_tt_rparen,     // )
 
-    tt_error = -1
+    e_tt_error = -1
 } token_type_t;
 
 typedef struct token_tag {
@@ -36,181 +31,154 @@ typedef struct token_tag {
     string_t id;
 } token_t;
 
-static inline int is_eol(int c)
+typedef struct lexer_state_tag {
+    string_t buf;
+    u64 pos;
+} lexer_state_t;
+
+static inline bool is_eol(int c)
 {
     return c == '\n' || c == EOF;
 }
 
-static inline int is_whitespace(int c)
+static inline bool is_whitespace(int c)
 {
     return c == ' ' || c == '\t' || c == '\r';
 }
 
-static token_t get_next_token(FILE *f)
+static inline bool tok_is_eol(token_t tok)
 {
-    // @TODO: last error code as static var?
+    return tok.type == e_tt_eof || tok.type == e_tt_eol;
+}
 
-    token_t tok = { tt_error, string_make("") };
-    int is_in_string = 0;
-    int token_had_string = 0; // for "" tokens
+enum {
+    c_rl_string_overflow = -1,
+    c_rl_eof = -2,
+};
+
+static int read_string_from_stream(FILE *f, string_t *buf)
+{
+    assert(string_is_valid(buf));
+    assert(buf->len > 0);
+
     int c;
-    for (;;) {
-        c = fgetc(f);
-    
-        int is_screened = c == '\\';
-        if (is_screened)
-            c = fgetc(f);
-
-        if ((is_screened || is_in_string) && is_eol(c))
-            goto yield; // tok type is error
-
-        if (!is_screened && c == '"') {
-            is_in_string = !is_in_string;
-            // @NOTE(PKiyashko): only the first assignment is needed
-            token_had_string = 1;
-            continue;
-        }
-
-        if (!is_in_string && !is_screened) {
-            // Separator found
-            if (is_eol(c) || is_whitespace(c) || strchr("<>|;&()", c)) {
-                // If there was an identifier, return sep to stream and yield
-                if (tok.id.len || token_had_string) {
-                    ungetc(c, f);
-                    tok.type = tt_ident;
-                    goto yield;
-                }
-
-                // Else, parse separator
-
-                // Try token-type separators
-                switch (c) {
-                case '<':
-                    tok.type = tt_in;
-                    goto yield;
-                case '>': // > or >>
-                    if ((c = fgetc(f)) == '>')
-                        tok.type = tt_append;
-                    else {
-                        tok.type = tt_out;
-                        ungetc(c, f);
-                    }
-                    goto yield;
-                case '|': // | or ||
-                    if ((c = fgetc(f)) == '|')
-                        tok.type = tt_or;
-                    else {
-                        tok.type = tt_pipe;
-                        ungetc(c, f);
-                    }
-                    goto yield;
-                case ';':
-                    tok.type = tt_semicolon;
-                    goto yield;
-                case '&': // & or &&
-                    if ((c = fgetc(f)) == '&')
-                        tok.type = tt_and;
-                    else {
-                        tok.type = tt_background;
-                        ungetc(c, f);
-                    }
-                    goto yield;
-                case '(':
-                    tok.type = tt_lparen;
-                    goto yield;
-                case ')':
-                    tok.type = tt_rparen;
-                    goto yield;
-                default:
-                }
-
-                // Otherwise, eol/eof
-                if (is_eol(c)) {
-                    tok.type = c == EOF ? tt_eof : tt_eol;
-                    goto yield;
-                }
-
-                // If none of the above, just whitespace
-                continue;
-            }
-        }
-
-        // If no separator found or screened/in string, add char to id
-        assert(c >= SCHAR_MIN && c <= SCHAR_MAX);
-        string_push_char(&tok.id, c);
+    int id = 0;
+    while (!is_eol(c = getchar())) {
+        buf->p[id++] = (char)c;
+        if (id >= buf->len)
+            return c_rl_string_overflow;
     }
 
-yield:
-    if (tok.type != tt_ident)
-        string_clear(&tok.id);
-    return tok;
+    if (c == EOF) {
+        assert(id == 0);
+        return c_rl_eof;
+    }
+
+    buf->p[id] = '\0';
+    return id;
+}
+
+static void consume_input(FILE *f)
+{
+    int c;
+    while (!is_eol(c = getchar()))
+        ;
+}
+
+// @TODO: un-stdio this
+static int lexer_getc(lexer_state_t *lexer)
+{
+    if (lexer->pos >= lexer->buf.len)
+        return EOF;
+    return lexer->buf.p[lexer->pos++];
+}
+
+static void lexer_ungetc(lexer_state_t *lexer)
+{
+    assert(lexer->pos > 0);
+    --lexer->pos;
+}
+
+static token_t get_next_token(lexer_state_t *lexer)
+{
+    // @TODO
 }
 
 int main()
 {
-    int is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+    const int is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+    const u64 line_buf_size = 1024;
 
-    if (is_term)
-        printf("> ");
+    int res = 0;
+
+    string_t line_buf = allocate_string(line_buf_size);
 
     for (;;) {
-        token_t next_token = get_next_token(stdin);
-        assert((next_token.type == tt_ident && next_token.id.p) ||
-               (next_token.type != tt_ident && !next_token.id.p));
-        if (is_term) {
-            // @TODO: check in/out flushing 
-            // (if there comes a time when an error can be at non-eof place)
-            switch (next_token.type) {
-            case tt_eol:
-                printf("$\n");
-                printf("> ");
-                break;
-            case tt_eof:
-                goto eof;
-            case tt_ident:
-                printf("[%s]\n", next_token.id.p);
-                string_clear(&next_token.id);
-                break;
-            case tt_in:
-                printf("<\n");
-                break;
-            case tt_out:
-                printf(">\n");
-                break;
-            case tt_append:
-                printf(">>\n");
-                break;
-            case tt_pipe:
-                printf("|\n");
-                break;
-            case tt_and:
-                printf("&&\n");
-                break;
-            case tt_or:
-                printf("||\n");
-                break;
-            case tt_semicolon:
-                printf(";\n");
-                break;
-            case tt_background:
-                printf("&\n");
-                break;
-            case tt_lparen:
-                printf("(\n");
-                break;
-            case tt_rparen:
-                printf(")\n");
-                break;
-            case tt_error:
-                printf("Tokenizer error!\n");
-                printf("> ");
+        if (is_term)
+            printf("> ");
+
+        int read_res = read_string_from_stream(stdin, &line_buf);
+        if (read_res == c_rl_string_overflow) {
+            fprintf(stderr,
+                    "The line is over the limit of %lu charactes and will not be processed\n",
+                    line_buf_size);
+            res = 1;
+            break;
+        } else if (read_res == c_rl_eof)
+            break;
+        else if (read_res == 0)
+            continue;
+
+        lexer_state_t lexer_state = {{line_buf.p, (u64)read_res}, 0};
+
+        token_t tok = {};
+        while (!tok_is_eol(tok = get_next_token(&lexer_state))) {
+            if (tok.type == e_tt_error)
                 break;
 
-            default: assert(0);
+            switch (tok.type) {
+            case e_tt_ident:
+                printf("[%.*s]\n", (int)tok.id.len, tok.id.p);
+                break;
+            case e_tt_in:
+                printf("<\n");
+                break;
+            case e_tt_out:
+                printf(">\n");
+                break;
+            case e_tt_append:
+                printf(">>\n");
+                break;
+            case e_tt_pipe:
+                printf("|\n");
+                break;
+            case e_tt_and:
+                printf("&&\n");
+                break;
+            case e_tt_or:
+                printf("||\n");
+                break;
+            case e_tt_semicolon:
+                printf(";\n");
+                break;
+            case e_tt_background:
+                printf("&\n");
+                break;
+            case e_tt_lparen:
+                printf("(\n");
+                break;
+            case e_tt_rparen:
+                printf(")\n");
+                break;
+            default:
             }
         }
     }
 
-eof:
-    return 0;
+    free_string(&line_buf);
+
+    if (is_term)
+        consume_input(stdin);
+
+    return res;
 }
