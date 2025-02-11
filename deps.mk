@@ -1,1 +1,1 @@
-main.o: main.c def.h string.h debug.h
+main.o: main.c def.h buffer.h debug.h str.h
