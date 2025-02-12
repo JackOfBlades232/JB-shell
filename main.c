@@ -6,9 +6,10 @@
 
 #include <stdio.h>
 #include <limits.h>
+#include <stdalign.h>
 #include <unistd.h>
 
-static inline bool cstr_contains(const char *str, char c)
+static inline bool cstr_contains(char const *str, char c)
 {
     for (; *str; ++str) {
         if (*str == c)
@@ -32,10 +33,31 @@ static u8 *arena_allocate(arena_t *arena, u64 bytes)
     return ptr;
 }
 
+static u8 *arena_allocate_aligned(arena_t *arena, u64 bytes, u64 alignment)
+{ 
+    // malloc alignment must be enough (since arena itself is mallocd)
+    assert(alignment <= 16 && 16 % alignment == 0);
+    assert(buffer_is_valid(&arena->buf));
+    u64 const required_start =
+        (arena->allocated + alignment - 1) & ~(alignment - 1);
+
+    if (required_start + bytes > arena->buf.sz)
+        return NULL;
+    u8 *ptr = (u8 *)arena->buf.p + required_start;
+    arena->allocated = required_start + bytes;
+    return ptr;
+}
+
 static inline void arena_drop(arena_t *arena)
 {
     arena->allocated = 0;
 }
+
+#define ARENA_ALLOC_ONE(arena_, type_) \
+    (type_ *)arena_allocate_aligned((arena_), sizeof(type_), _Alignof(type_))
+#define ARENA_ALLOC_N(arena_, type_, n_) \
+    (type_ *)arena_allocate_aligned(     \
+        (arena_), (n_) * sizeof(type_), _Alignof(type_))
 
 enum readline_res_t {
     e_rl_ok = 0,
@@ -88,7 +110,6 @@ typedef enum token_type_tag {
     e_tt_uninit = 0,
 
     e_tt_eol,        // last token
-    e_tt_eof,        // real eof
     e_tt_ident,      // anything
     e_tt_in,         // <
     e_tt_out,        // >
@@ -115,17 +136,11 @@ typedef struct lexer_state_tag {
     u64 pos;
 } lexer_state_t;
 
-static inline bool tok_is_eol(token_t tok)
+static inline bool tok_is_terminating(token_t tok)
 {
-    return tok.type == e_tt_eof || tok.type == e_tt_eol;
+    return tok.type == e_tt_eol || tok.type == e_tt_error;
 }
 
-static inline int lexer_getc(lexer_state_t *lexer)
-{
-    if (lexer->pos >= lexer->line.len)
-        return EOF;
-    return lexer->line.p[lexer->pos++];
-}
 static inline int lexer_peek(lexer_state_t *lexer)
 {
     if (lexer->pos >= lexer->line.len)
@@ -138,43 +153,29 @@ static inline void lexer_consume(lexer_state_t *lexer)
     ++lexer->pos;
 }
 
-// @TODO: straighten
 static token_t get_next_token(lexer_state_t *lexer, arena_t *symbols_arena)
 {
     token_t tok = {};
 
-    int c;
-    bool started_tok = false;
+    enum {
+        e_lst_prefix_separator,
+        e_lst_parsing_identifier
+    } state = e_lst_prefix_separator;
+
     bool in_quotes = false;
-    bool is_screened = false;
+    bool screen_next = false;
+    int c;
 
-    while (!is_eol(c = lexer_getc(lexer))) {
-        if (!started_tok) {
-            if (is_whitespace(c))
+    while (!is_eol(c = lexer_peek(lexer))) {
+        if (state == e_lst_prefix_separator) {
+            if (is_whitespace(c)) {
+                lexer_consume(lexer);
                 continue;
-
-            started_tok = true;
-        }
-
-        if (c == '\\' && !is_screened) {
-            is_screened = true;
-            continue;
-        }
-
-        if (c == '"' && !is_screened) {
-            in_quotes = !in_quotes;
-            continue;
-        }
-
-        if (!is_screened && !in_quotes) {
-            if (is_whitespace(c) ||
-                (!string_is_empty(&tok.id) && cstr_contains("<>|&();", c)))
-            {
-                break;
             }
 
             switch (c) {
             case '>':
+                lexer_consume(lexer);
                 if (lexer_peek(lexer) == '>') {
                     lexer_consume(lexer);
                     tok.type = e_tt_append;
@@ -182,6 +183,7 @@ static token_t get_next_token(lexer_state_t *lexer, arena_t *symbols_arena)
                     tok.type = e_tt_out;
                 return tok;
             case '|':
+                lexer_consume(lexer);
                 if (lexer_peek(lexer) == '|') {
                     lexer_consume(lexer);
                     tok.type = e_tt_or;
@@ -189,6 +191,7 @@ static token_t get_next_token(lexer_state_t *lexer, arena_t *symbols_arena)
                     tok.type = e_tt_pipe;
                 return tok;
             case '&':
+                lexer_consume(lexer);
                 if (lexer_peek(lexer) == '&') {
                     lexer_consume(lexer);
                     tok.type = e_tt_and;
@@ -197,40 +200,67 @@ static token_t get_next_token(lexer_state_t *lexer, arena_t *symbols_arena)
                 return tok;
 
             case '<':
+                lexer_consume(lexer);
                 tok.type = e_tt_in;
                 return tok;
             case ';':
+                lexer_consume(lexer);
                 tok.type = e_tt_semicolon;
                 return tok;
             case '(':
+                lexer_consume(lexer);
                 tok.type = e_tt_lparen;
                 return tok;
             case ')':
+                lexer_consume(lexer);
                 tok.type = e_tt_rparen;
                 return tok;
 
             default:
+                state = e_lst_parsing_identifier;
             }
         }
 
-        if (string_is_empty(&tok.id))
-            tok.id.p = (char *)arena_allocate(symbols_arena, 0);
+        if (state == e_lst_parsing_identifier) {
+            if (!in_quotes && !screen_next &&
+                (is_whitespace(c) || cstr_contains("<>|&;()", c)))
+            {
+                break;
+            }
 
-        assert(tok.id.p + tok.id.len - symbols_arena->buf.p <
-               symbols_arena->buf.sz);
+            lexer_consume(lexer);
 
-        ++symbols_arena->allocated;
-        
-        assert(c >= SCHAR_MIN && c <= SCHAR_MAX);
-        tok.id.p[tok.id.len++] = (char)c;
+            if (c == '\\' && !screen_next) {
+                screen_next = true;
+                continue;
+            }
+
+            if (c == '"' && !screen_next) {
+                in_quotes = !in_quotes;
+                continue;
+            }
+
+            if (string_is_empty(&tok.id))
+                tok.id.p = (char *)arena_allocate(symbols_arena, 0);
+
+            assert(tok.id.p + tok.id.len - symbols_arena->buf.p <
+                   symbols_arena->buf.sz);
+
+            ++symbols_arena->allocated;
+            
+            assert(c >= SCHAR_MIN && c <= SCHAR_MAX);
+            tok.id.p[tok.id.len++] = (char)c;
+
+            screen_next = false;
+        }
     }
 
-    if (in_quotes || is_screened) {
+    if (in_quotes || screen_next) {
         tok.type = e_tt_error;
         return tok;
     }
 
-    if (string_is_empty(&tok.id) && is_eol(c))
+    if (state == e_lst_prefix_separator)
         tok.type = e_tt_eol;
     else
         tok.type = e_tt_ident;
@@ -240,14 +270,22 @@ static token_t get_next_token(lexer_state_t *lexer, arena_t *symbols_arena)
 
 int main()
 {
-    const int is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
-    const u64 line_buf_size = 1024;
+    enum {
+        c_program_mem_size = 1024 * 1024,
+        c_line_buf_size = 1024,
+    };
+
+    int const is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
 
     int res = 0;
 
-    buffer_t memory = allocate_buffer(2 * line_buf_size);
-    buffer_t line_storage = {memory.p, line_buf_size};
-    arena_t symbols_arena = {{memory.p + line_buf_size, line_buf_size}, 0};
+    buffer_t memory = allocate_buffer(c_program_mem_size);
+    buffer_t line_storage = {memory.p, c_line_buf_size};
+    arena_t symbols_arena = {{memory.p + c_line_buf_size, c_line_buf_size}};
+    arena_t interpreter_arena = {{
+        memory.p + 2 * c_line_buf_size,
+        c_program_mem_size - 2 * c_line_buf_size
+    }};
 
     for (;;) {
         if (is_term)
@@ -258,25 +296,43 @@ int main()
         int read_res = read_line_from_stream(stdin, &line_storage, &line);
         if (read_res == e_rl_string_overflow) {
             fprintf(stderr,
-                    "The line is over the limit of %lu charactes and will not be processed\n",
-                    line_buf_size);
+                    "The line is over the limit of %d charactes "
+                    "and will not be processed\n",
+                    c_line_buf_size);
             res = 1;
             break;
         } else if (read_res == e_rl_eof)
             break;
         else if (line.len == 0)
-            continue;
+            goto loop_end;
 
         lexer_state_t lexer_state = {line, 0};
 
-        token_t tok = {};
-        while (!tok_is_eol(tok = get_next_token(&lexer_state, &symbols_arena))) {
-            if (tok.type == e_tt_error)
+        token_t *tokp = ARENA_ALLOC_ONE(&interpreter_arena, token_t);
+
+        token_t *tokens = tokp;
+        u64 token_cnt = 0;
+
+        while (!tok_is_terminating(
+                   *tokp = get_next_token(&lexer_state, &symbols_arena)))
+        {
+            if (tokp->type == e_tt_error)
                 break;
 
-            switch (tok.type) {
+            ++token_cnt;
+            tokp = ARENA_ALLOC_ONE(&interpreter_arena, token_t);
+        }
+
+        if (tokp->type == e_tt_error) {
+            fprintf(stderr, "Error: [unspecified error] at char %lu\n",
+                    lexer_state.pos);
+            goto loop_end;
+        }
+
+        for (token_t *t = tokens; t != tokens + token_cnt; ++t) {
+            switch (t->type) {
             case e_tt_ident:
-                printf("[%.*s]\n", (int)tok.id.len, tok.id.p);
+                printf("[%.*s]\n", (int)t->id.len, t->id.p);
                 break;
             case e_tt_in:
                 printf("<\n");
@@ -311,6 +367,10 @@ int main()
             default:
             }
         }
+
+    loop_end:
+        arena_drop(&symbols_arena);
+        arena_drop(&interpreter_arena);
     }
 
     free_buffer(&memory);

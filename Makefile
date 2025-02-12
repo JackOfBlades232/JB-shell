@@ -1,4 +1,4 @@
-SRCMODULES = $(shell find ./ -type f -name '*.c')
+SRCMODULES = $(wildcard '*.c')
 OBJMODULES = $(SRCMODULES:.c=.o)
 CC = gcc
 CFLAGS = -g -Wall
@@ -6,10 +6,13 @@ CFLAGS = -g -Wall
 %.o: %.c %.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
-prog: $(OBJMODULES)
+prog: main.c $(OBJMODULES)
 	$(CC) $(CFLAGS) $^ -o shell
 
-ifneq (clean, core_clean, $(MAKECMDGOALS))
+test: tests.c $(OBJMODULES)
+	$(CC) $(CFLAGS) $^ -o $@
+
+ifneq (clean, $(MAKECMDGOALS))
 -include deps.mk
 endif
 
@@ -18,6 +21,3 @@ deps.mk: $(SRCMODULES)
 
 clean:
 	rm -f $(OBJMODULES) *.o shell
-
-core_clean:
-	rm -f core.*
