@@ -9,6 +9,16 @@
 #include <stdalign.h>
 #include <unistd.h>
 
+// @TODO: handle allocation failures somehow
+
+static inline void mem_set(u8 *mem, u64 sz)
+{
+    for (u8 *end = mem + sz; mem != end; ++mem)
+        *mem = 0;
+}
+
+#define CLEAR(addr_) mem_set((u8 *)(addr_), sizeof(*(addr_)))
+
 static inline bool cstr_contains(char const *str, char c)
 {
     for (; *str; ++str) {
@@ -53,7 +63,7 @@ static inline void arena_drop(arena_t *arena)
     arena->allocated = 0;
 }
 
-#define ARENA_ALLOC_ONE(arena_, type_) \
+#define ARENA_ALLOC(arena_, type_) \
     (type_ *)arena_allocate_aligned((arena_), sizeof(type_), _Alignof(type_))
 #define ARENA_ALLOC_N(arena_, type_, n_) \
     (type_ *)arena_allocate_aligned(     \
@@ -131,29 +141,24 @@ typedef struct token_tag {
     string_t id;
 } token_t;
 
-typedef struct lexer_state_tag {
+typedef struct lexer_tag {
     string_t line;
     u64 pos;
-} lexer_state_t;
+} lexer_t;
 
-static inline bool tok_is_terminating(token_t tok)
-{
-    return tok.type == e_tt_eol || tok.type == e_tt_error;
-}
-
-static inline int lexer_peek(lexer_state_t *lexer)
+static inline int lexer_peek(lexer_t *lexer)
 {
     if (lexer->pos >= lexer->line.len)
         return EOF;
     return lexer->line.p[lexer->pos];
 }
-static inline void lexer_consume(lexer_state_t *lexer)
+static inline void lexer_consume(lexer_t *lexer)
 {
     assert(lexer->pos < lexer->line.len);
     ++lexer->pos;
 }
 
-static token_t get_next_token(lexer_state_t *lexer, arena_t *symbols_arena)
+static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
 {
     token_t tok = {};
 
@@ -268,6 +273,150 @@ static token_t get_next_token(lexer_state_t *lexer, arena_t *symbols_arena)
     return tok;
 }
 
+static inline bool tok_is_valid(token_t tok)
+{
+    return tok.type != e_tt_uninit && tok.type != e_tt_error;
+}
+
+static inline bool tok_is_terminating(token_t tok)
+{
+    return tok.type == e_tt_eol || !tok_is_valid(tok);
+}
+
+static inline bool tok_is_command_sep(token_t tok)
+{
+    return tok_is_terminating(tok) || tok.type == e_tt_pipe ||
+           tok.type == e_tt_and || tok.type == e_tt_or ||
+           tok.type == e_tt_semicolon || tok.type == e_tt_background ||
+           tok.type == e_tt_lparen || tok.type == e_tt_rparen;
+}
+
+// @TODO (parser):
+// pipe
+// In/out/append
+// chaining
+// subshells
+// error reporting
+
+typedef enum node_type_tag {
+    e_nd_notinit = 0,
+
+    e_nd_command,
+} node_type_t;
+
+typedef struct arg_node_tag {
+    token_t tok;
+    struct arg_node_tag *next;
+} arg_node_t;
+
+typedef struct command_node_tag {
+    token_t cmd;
+    arg_node_t *args;    
+    u64 arg_cnt;
+} command_node_t;
+
+typedef struct node_tag {
+    node_type_t type;
+    union {
+        command_node_t cmd;
+    };
+} node_t;
+
+token_t parse_command(lexer_t *lexer, command_node_t *out_cmd, arena_t *arena)
+{
+    token_t tok = {};
+
+    enum {
+        e_cst_init,
+        e_cst_parsing_args,
+    } state = e_cst_init;
+
+    CLEAR(out_cmd);    
+    arg_node_t *last_arg = NULL;
+
+    while (!tok_is_command_sep(tok = get_next_token(lexer, arena))) {
+        if (tok.type != e_tt_ident) {
+            fprintf(stderr,
+                    "Parser error: in/out/append not implemented yet "
+                    "(at char %lu)\n",
+                    lexer->pos);
+            tok.type = e_tt_error;
+            break;
+        }
+
+        // @TODO: assert stuff
+
+        switch (state) {
+        case e_cst_init:
+            out_cmd->cmd = tok;
+            state = e_cst_parsing_args;
+            break;
+        case e_cst_parsing_args: {
+            arg_node_t *arg = ARENA_ALLOC(arena, arg_node_t);
+            arg->tok = tok;
+            arg->next = NULL;
+            if (out_cmd->arg_cnt == 0)
+                out_cmd->args = arg;
+            else
+                last_arg->next = arg; 
+            last_arg = arg;
+            ++out_cmd->arg_cnt;
+        } break;
+        default: 
+        }
+    }
+
+    if (state == e_cst_init) // @TODO: elaborate
+        tok.type = e_tt_error;
+
+    return tok;
+}
+
+node_t *parse_line(string_t line, arena_t *arena)
+{
+    lexer_t lexer = {line, 0};
+
+    node_t *node = ARENA_ALLOC(arena, node_t);
+
+    node->type = e_nd_command;
+    token_t endtok = parse_command(&lexer, &node->cmd, arena); 
+
+    if (endtok.type == e_tt_error) {
+        fprintf(stderr,
+                "Parser or lexer error: [unspecified error] (at char %lu)\n",
+                lexer.pos);
+        return NULL;
+    } else if (endtok.type != e_tt_eol) {
+        fprintf(stderr,
+                "Parser error: encountered uniplemented token #%d "
+                "(at char %lu)\n", endtok.type, lexer.pos);
+        return NULL;
+    }
+
+    return node;
+}
+
+static void print_indentation(int indentation)
+{
+    for (int i = 0; i < indentation; ++i)
+        printf("    ");
+}
+
+static void print_command(node_t *node, int indentation)
+{
+    assert(node->type == e_nd_command);
+    command_node_t *cmd = &node->cmd;
+    print_indentation(indentation);
+    printf("cmd:<%.*s>", (int)cmd->cmd.id.len, cmd->cmd.id.p);
+    if (cmd->arg_cnt) {
+        printf(", args:[<%.*s>", STR_PRINTF_ARGS(cmd->args->tok.id));
+        for (arg_node_t *arg = cmd->args->next; arg; arg = arg->next)
+            printf(", <%.*s>", STR_PRINTF_ARGS(arg->tok.id));
+        printf("]");
+    }
+    putchar('\n');
+}
+
 int main()
 {
     enum {
@@ -281,10 +430,9 @@ int main()
 
     buffer_t memory = allocate_buffer(c_program_mem_size);
     buffer_t line_storage = {memory.p, c_line_buf_size};
-    arena_t symbols_arena = {{memory.p + c_line_buf_size, c_line_buf_size}};
-    arena_t interpreter_arena = {{
-        memory.p + 2 * c_line_buf_size,
-        c_program_mem_size - 2 * c_line_buf_size
+    arena_t parser_arena = {{
+        memory.p + c_line_buf_size,
+        c_program_mem_size - c_line_buf_size
     }};
 
     for (;;) {
@@ -306,71 +454,15 @@ int main()
         else if (line.len == 0)
             goto loop_end;
 
-        lexer_state_t lexer_state = {line, 0};
-
-        token_t *tokp = ARENA_ALLOC_ONE(&interpreter_arena, token_t);
-
-        token_t *tokens = tokp;
-        u64 token_cnt = 0;
-
-        while (!tok_is_terminating(
-                   *tokp = get_next_token(&lexer_state, &symbols_arena)))
-        {
-            if (tokp->type == e_tt_error)
-                break;
-
-            ++token_cnt;
-            tokp = ARENA_ALLOC_ONE(&interpreter_arena, token_t);
-        }
-
-        if (tokp->type == e_tt_error) {
-            fprintf(stderr, "Error: [unspecified error] at char %lu\n",
-                    lexer_state.pos);
+        node_t *ast_root = parse_line(line, &parser_arena);
+        if (!ast_root)
             goto loop_end;
-        }
 
-        for (token_t *t = tokens; t != tokens + token_cnt; ++t) {
-            switch (t->type) {
-            case e_tt_ident:
-                printf("[%.*s]\n", (int)t->id.len, t->id.p);
-                break;
-            case e_tt_in:
-                printf("<\n");
-                break;
-            case e_tt_out:
-                printf(">\n");
-                break;
-            case e_tt_append:
-                printf(">>\n");
-                break;
-            case e_tt_pipe:
-                printf("|\n");
-                break;
-            case e_tt_and:
-                printf("&&\n");
-                break;
-            case e_tt_or:
-                printf("||\n");
-                break;
-            case e_tt_semicolon:
-                printf(";\n");
-                break;
-            case e_tt_background:
-                printf("&\n");
-                break;
-            case e_tt_lparen:
-                printf("(\n");
-                break;
-            case e_tt_rparen:
-                printf(")\n");
-                break;
-            default:
-            }
-        }
+        assert(ast_root->type == e_nd_command);
+        print_command(ast_root, 0);
 
     loop_end:
-        arena_drop(&symbols_arena);
-        arena_drop(&interpreter_arena);
+        arena_drop(&parser_arena);
     }
 
     free_buffer(&memory);

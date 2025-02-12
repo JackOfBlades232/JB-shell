@@ -25,4 +25,6 @@ static inline void clear_string(string_t *s)
     s->len = 0;
 }
 
+#define STR_PRINTF_ARGS(str_) (int)((str_).len), ((str_).p)
+
 #endif
