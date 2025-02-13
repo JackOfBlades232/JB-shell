@@ -22,7 +22,7 @@ static inline void mem_set(u8 *mem, u64 sz)
 
 #define CLEAR(addr_) mem_set((u8 *)(addr_), sizeof(*(addr_)))
 
-static inline bool cstr_contains(char const *str, char c)
+static inline b32 cstr_contains(char const *str, char c)
 {
     for (; *str; ++str) {
         if (*str == c)
@@ -78,12 +78,12 @@ enum readline_res_t {
     e_rl_eof = -2,
 };
 
-static inline bool is_eol(int c)
+static inline b32 is_eol(int c)
 {
     return c == '\n' || c == EOF;
 }
 
-static inline bool is_whitespace(int c)
+static inline b32 is_whitespace(int c)
 {
     return c == ' ' || c == '\t' || c == '\r';
 }
@@ -170,8 +170,8 @@ static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
         e_lst_parsing_identifier
     } state = e_lst_prefix_separator;
 
-    bool in_quotes = false;
-    bool screen_next = false;
+    b32 in_quotes = false;
+    b32 screen_next = false;
     int c;
 
     while (!is_eol(c = lexer_peek(lexer))) {
@@ -281,17 +281,17 @@ static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
     return tok;
 }
 
-static inline bool tok_is_valid(token_t tok)
+static inline b32 tok_is_valid(token_t tok)
 {
     return tok.type != e_tt_uninit && tok.type != e_tt_error;
 }
 
-static inline bool tok_is_terminating(token_t tok)
+static inline b32 tok_is_terminating(token_t tok)
 {
     return tok.type == e_tt_eol || !tok_is_valid(tok);
 }
 
-static inline bool tok_is_command_sep(token_t tok)
+static inline b32 tok_is_command_sep(token_t tok)
 {
     return tok_is_terminating(tok) || tok.type == e_tt_pipe ||
            tok.type == e_tt_and || tok.type == e_tt_or ||
@@ -307,12 +307,6 @@ static inline bool tok_is_command_sep(token_t tok)
 // subshells
 // proper error reporting
 
-typedef enum node_type_tag {
-    e_nd_notinit = 0,
-
-    e_nd_command,
-} node_type_t;
-
 typedef struct arg_node_tag {
     string_t name;
     struct arg_node_tag *next;
@@ -324,12 +318,56 @@ typedef struct command_node_tag {
     u64 arg_cnt;
 } command_node_t;
 
-typedef struct node_tag {
-    node_type_t type;
-    union {
-        command_node_t cmd;
-    };
-} node_t;
+typedef enum uncond_link_tag {
+    e_ul_bg,
+    e_ul_wait
+} uncond_link_t;
+
+typedef struct uncond_node_tag {
+    command_node_t cmd;
+    uncond_link_t link;
+    struct uncond_node_tag *next;
+} uncond_node_t;
+
+typedef struct uncond_chain_node_tag {
+    command_node_t first;
+    uncond_node_t *chain;
+    u64 uncond_cnt;
+} uncond_chain_node_t;
+
+typedef uncond_chain_node_t root_node_t;
+
+static void print_indentation(int indentation)
+{
+    for (int i = 0; i < indentation; ++i)
+        printf("    ");
+}
+
+static void print_command(command_node_t const *cmd, int indentation)
+{
+    print_indentation(indentation);
+    printf("cmd:<%.*s>", STR_PRINTF_ARGS(cmd->cmd));
+    if (cmd->arg_cnt) {
+        printf(", args:[<%.*s>", STR_PRINTF_ARGS(cmd->args->name));
+        for (arg_node_t *arg = cmd->args->next; arg; arg = arg->next)
+            printf(", <%.*s>", STR_PRINTF_ARGS(arg->name));
+        printf("]");
+    }
+    putchar('\n');
+}
+
+static void print_uncond_chain(uncond_chain_node_t const *chain,
+                               int indentation)
+{
+    command_node_t const *cmd = &chain->first;
+    for (uncond_node_t *uncond = chain->chain; uncond; uncond = uncond->next) {
+        print_command(cmd, indentation + 1);
+        print_indentation(indentation);
+        printf("%s\n", uncond->link == e_ul_bg ? "&" : ";");
+        cmd = &uncond->cmd;
+    }
+    print_command(cmd, indentation + 1);
+}
 
 token_t parse_command(lexer_t *lexer, command_node_t *out_cmd, arena_t *arena)
 {
@@ -346,8 +384,7 @@ token_t parse_command(lexer_t *lexer, command_node_t *out_cmd, arena_t *arena)
     while (!tok_is_command_sep(tok = get_next_token(lexer, arena))) {
         if (tok.type != e_tt_ident) {
             fprintf(stderr,
-                    "Parser error: in/out/append not implemented yet "
-                    "(at char %lu)\n",
+                    "Parser error: </>/>> not implemented yet (at char %lu)\n",
                     lexer->pos);
             tok.type = e_tt_error;
             break;
@@ -381,70 +418,92 @@ token_t parse_command(lexer_t *lexer, command_node_t *out_cmd, arena_t *arena)
     return tok;
 }
 
-node_t *parse_line(string_t line, arena_t *arena)
+root_node_t *parse_line(string_t line, arena_t *arena)
 {
     lexer_t lexer = {line, 0};
 
-    node_t *node = ARENA_ALLOC(arena, node_t);
+    uncond_chain_node_t *node = ARENA_ALLOC(arena, uncond_chain_node_t);
+    CLEAR(node);
 
-    node->type = e_nd_command;
-    token_t endtok = parse_command(&lexer, &node->cmd, arena); 
+    enum {
+        e_lst_init,
+        e_lst_parsing_chain,
+    } state = e_lst_init;
 
-    if (endtok.type == e_tt_error) {
+    command_node_t cmd = {};
+    uncond_node_t *last_uncond = NULL;
+
+    token_t sep = {};
+
+    do {
+        uncond_link_t const link =
+            sep.type == e_tt_background ? e_ul_bg : e_ul_wait;
+
+        sep = parse_command(&lexer, &cmd, arena);
+        if (sep.type == e_tt_error)
+            break;
+
+        if (!tok_is_terminating(sep) && 
+            sep.type != e_tt_semicolon &&
+            sep.type != e_tt_background)
+        {
+            fprintf(stderr,
+                    "Parser error: ||/&&/| not implemented yet (at char %lu)\n",
+                    lexer.pos);
+            sep.type = e_tt_error;
+            break;
+        }
+
+        switch (state) {
+        case e_lst_init:
+            node->first = cmd;
+            state = e_lst_parsing_chain;
+            break;
+        case e_lst_parsing_chain: {
+            uncond_node_t *next_uncond = ARENA_ALLOC(arena, uncond_node_t);
+            next_uncond->cmd = cmd;
+            next_uncond->link = link;
+            next_uncond->next = NULL;
+            if (node->uncond_cnt == 0)
+                node->chain = next_uncond;
+            else
+                last_uncond->next = next_uncond;
+            last_uncond = next_uncond;
+            ++node->uncond_cnt;
+        } break;
+        }
+    } while (!tok_is_terminating(sep));
+
+    if (sep.type == e_tt_error) {
         fprintf(stderr,
                 "Parser or lexer error: [unspecified error] (at char %lu)\n",
                 lexer.pos);
         return NULL;
-    } else if (endtok.type != e_tt_eol) {
+    } else if (sep.type != e_tt_eol) {
         fprintf(stderr,
                 "Parser error: encountered uniplemented token #%d "
-                "(at char %lu)\n", endtok.type, lexer.pos);
+                "(at char %lu)\n", sep.type, lexer.pos);
         return NULL;
     }
 
     return node;
 }
 
-#if 0
-static void print_indentation(int indentation)
-{
-    for (int i = 0; i < indentation; ++i)
-        printf("    ");
-}
-
-static void print_command(node_t *node, int indentation)
-{
-    assert(node->type == e_nd_command);
-    command_node_t *cmd = &node->cmd;
-    print_indentation(indentation);
-    printf("cmd:<%.*s>", STR_PRINTF_ARGS(cmd->cmd));
-    if (cmd->arg_cnt) {
-        printf(", args:[<%.*s>", STR_PRINTF_ARGS(cmd->args->name));
-        for (arg_node_t *arg = cmd->args->next; arg; arg = arg->next)
-            printf(", <%.*s>", STR_PRINTF_ARGS(arg->name));
-        printf("]");
-    }
-    putchar('\n');
-}
-#endif
-
 // @TODO (Interpreter):
-// background
 // In/out/append
 // pipe
 // chaining
 // subshells
 // proper error reporting
 
-static int execute_command(node_t *node, arena_t *arena)
+static int execute_command(command_node_t const *cmd, arena_t *arena, b32 bg)
 {
-    assert(node->type == e_nd_command);
-    command_node_t *cmd = &node->cmd;
-
-    const string_t cdstr = LITSTR("cd");
-    const string_t homedirstr = LITSTR("~");
+    string_t const cdstr = LITSTR("cd");
+    string_t const homedirstr = LITSTR("~");
 
     if (str_eq(cmd->cmd, cdstr)) {
+        // @TODO: should I disallow bg here?
+
         if (cmd->arg_cnt > 1)
             return -1;
     
@@ -473,15 +532,32 @@ static int execute_command(node_t *node, arena_t *arena)
         } else if (pid == -1)
             return -2;
 
-        int status = 0;
-        pid_t awaited = waitpid(-1, &status, 0);
-        if (awaited != pid || !WIFEXITED(status))
-            return -2;
+        if (!bg) {
+            pid_t awaited;
+            int status;
+            while ((awaited = waitpid(-1, &status, 0)) != pid) {
+                if (awaited == -1)
+                    return -2;
+            }
+            if (!WIFEXITED(status))
+                return -2;
 
-        return WEXITSTATUS(status);
+            return WEXITSTATUS(status);
+        }
     }
 
     return 0;
+}
+
+static int execute_uncond_chain(uncond_chain_node_t const *chain,
+                                arena_t *arena)
+{
+    command_node_t const *cmd = &chain->first;
+    for (uncond_node_t *uncond = chain->chain; uncond; uncond = uncond->next) {
+        execute_command(cmd, arena, uncond->link == e_ul_bg);
+        cmd = &uncond->cmd;
+    }
+    return execute_command(cmd, arena, false);
 }
 
 int main()
@@ -524,23 +600,25 @@ int main()
         else if (line.len == 0)
             goto loop_end;
 
-        node_t *ast_root = parse_line(line, &parser_arena);
+        root_node_t *ast_root = parse_line(line, &parser_arena);
         if (!ast_root)
             goto loop_end;
 
-        assert(ast_root->type == e_nd_command);
+        print_uncond_chain(ast_root, 0);
 
-        int retcode = execute_command(ast_root, &inerpreter_arena);
-        if (retcode != 0) {
-            fprintf(stderr,
-                    "Interpreter error: '%.*s' failed with code %d\n",
-                    STR_PRINTF_ARGS(ast_root->cmd.cmd), retcode);
-        }
+        int retcode = execute_uncond_chain(ast_root, &inerpreter_arena);
+        if (retcode != 0)
+            fprintf(stderr, "Interpreter error: failed w/ code %d\n", retcode);
 
     loop_end:
         arena_drop(&parser_arena);
         arena_drop(&inerpreter_arena);
     }
+
+    pid_t awaited;
+    int status_sink;
+    while ((awaited = waitpid(-1, &status_sink, 0)) > 0)
+        ;
 
     free_buffer(&memory);
 
