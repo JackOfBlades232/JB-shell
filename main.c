@@ -4,10 +4,13 @@
 #include "str.h"
 #include "debug.h"
 
-#include <stdio.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <pwd.h>
 #include <limits.h>
 #include <stdalign.h>
-#include <unistd.h>
+#include <stdio.h>
 
 // @TODO: handle allocation failures somehow
 
@@ -267,8 +270,13 @@ static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
 
     if (state == e_lst_prefix_separator)
         tok.type = e_tt_eol;
-    else
+    else {
+        // To make linux syscalls happy
+        ++symbols_arena->allocated;
+        tok.id.p[tok.id.len] = '\0';
+
         tok.type = e_tt_ident;
+    }
 
     return tok;
 }
@@ -292,11 +300,12 @@ static inline bool tok_is_command_sep(token_t tok)
 }
 
 // @TODO (parser):
-// pipe
+// background
 // In/out/append
+// pipe
 // chaining
 // subshells
-// error reporting
+// proper error reporting
 
 typedef enum node_type_tag {
     e_nd_notinit = 0,
@@ -305,12 +314,12 @@ typedef enum node_type_tag {
 } node_type_t;
 
 typedef struct arg_node_tag {
-    token_t tok;
+    string_t name;
     struct arg_node_tag *next;
 } arg_node_t;
 
 typedef struct command_node_tag {
-    token_t cmd;
+    string_t cmd;
     arg_node_t *args;    
     u64 arg_cnt;
 } command_node_t;
@@ -348,12 +357,12 @@ token_t parse_command(lexer_t *lexer, command_node_t *out_cmd, arena_t *arena)
 
         switch (state) {
         case e_cst_init:
-            out_cmd->cmd = tok;
+            out_cmd->cmd = tok.id;
             state = e_cst_parsing_args;
             break;
         case e_cst_parsing_args: {
             arg_node_t *arg = ARENA_ALLOC(arena, arg_node_t);
-            arg->tok = tok;
+            arg->name = tok.id;
             arg->next = NULL;
             if (out_cmd->arg_cnt == 0)
                 out_cmd->args = arg;
@@ -396,6 +405,7 @@ node_t *parse_line(string_t line, arena_t *arena)
     return node;
 }
 
+#if 0
 static void print_indentation(int indentation)
 {
     for (int i = 0; i < indentation; ++i)
@@ -407,14 +417,71 @@ static void print_command(node_t *node, int indentation)
     assert(node->type == e_nd_command);
     command_node_t *cmd = &node->cmd;
     print_indentation(indentation);
-    printf("cmd:<%.*s>", (int)cmd->cmd.id.len, cmd->cmd.id.p);
+    printf("cmd:<%.*s>", STR_PRINTF_ARGS(cmd->cmd));
     if (cmd->arg_cnt) {
-        printf(", args:[<%.*s>", STR_PRINTF_ARGS(cmd->args->tok.id));
+        printf(", args:[<%.*s>", STR_PRINTF_ARGS(cmd->args->name));
         for (arg_node_t *arg = cmd->args->next; arg; arg = arg->next)
-            printf(", <%.*s>", STR_PRINTF_ARGS(arg->tok.id));
+            printf(", <%.*s>", STR_PRINTF_ARGS(arg->name));
         printf("]");
     }
     putchar('\n');
+}
+#endif
+
+// @TODO (Interpreter):
+// background
+// In/out/append
+// pipe
+// chaining
+// subshells
+// proper error reporting
+
+static int execute_command(node_t *node, arena_t *arena)
+{
+    assert(node->type == e_nd_command);
+    command_node_t *cmd = &node->cmd;
+
+    const string_t cdstr = LITSTR("cd");
+    const string_t homedirstr = LITSTR("~");
+
+    if (str_eq(cmd->cmd, cdstr)) {
+        if (cmd->arg_cnt > 1)
+            return -1;
+    
+        char const *dir = NULL;
+
+        if (cmd->arg_cnt == 0 || str_eq(cmd->args->name, homedirstr)) {
+            if ((dir = getenv("HOME")) == NULL)
+                dir = getpwuid(getuid())->pw_dir;
+        } else
+            dir = cmd->args->name.p;
+
+        if (chdir(dir) != 0)
+            return 1;
+    } else {
+        char **argv = ARENA_ALLOC_N(arena, char *, cmd->arg_cnt + 2);
+        argv[0] = cmd->cmd.p;
+        u64 i = 1;
+        for (arg_node_t *arg = cmd->args; arg; arg = arg->next)
+            argv[i++] = arg->name.p;
+        argv[i] = NULL;
+
+        pid_t pid = fork();
+        if (pid == 0) {
+            int ret = execvp(argv[0], argv);
+            exit(ret);
+        } else if (pid == -1)
+            return -2;
+
+        int status = 0;
+        pid_t awaited = waitpid(-1, &status, 0);
+        if (awaited != pid || !WIFEXITED(status))
+            return -2;
+
+        return WEXITSTATUS(status);
+    }
+
+    return 0;
 }
 
 int main()
@@ -422,6 +489,8 @@ int main()
     enum {
         c_program_mem_size = 1024 * 1024,
         c_line_buf_size = 1024,
+        c_parser_mem_size = (c_program_mem_size / 2) - c_line_buf_size,
+        c_interpreter_mem_size = c_program_mem_size / 2
     };
 
     int const is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
@@ -430,9 +499,10 @@ int main()
 
     buffer_t memory = allocate_buffer(c_program_mem_size);
     buffer_t line_storage = {memory.p, c_line_buf_size};
-    arena_t parser_arena = {{
-        memory.p + c_line_buf_size,
-        c_program_mem_size - c_line_buf_size
+    arena_t parser_arena = {{memory.p + c_line_buf_size, c_parser_mem_size}};
+    arena_t inerpreter_arena = {{
+        memory.p + c_line_buf_size + c_parser_mem_size,
+        c_interpreter_mem_size
     }};
 
     for (;;) {
@@ -459,10 +529,17 @@ int main()
             goto loop_end;
 
         assert(ast_root->type == e_nd_command);
-        print_command(ast_root, 0);
+
+        int retcode = execute_command(ast_root, &inerpreter_arena);
+        if (retcode != 0) {
+            fprintf(stderr,
+                    "Interpreter error: '%.*s' failed with code %d\n",
+                    STR_PRINTF_ARGS(ast_root->cmd.cmd), retcode);
+        }
 
     loop_end:
         arena_drop(&parser_arena);
+        arena_drop(&inerpreter_arena);
     }
 
     free_buffer(&memory);

@@ -25,6 +25,19 @@ static inline void clear_string(string_t *s)
     s->len = 0;
 }
 
+#define LITSTR(litcstr_) {(litcstr_), sizeof(litcstr_) - 1}
+
 #define STR_PRINTF_ARGS(str_) (int)((str_).len), ((str_).p)
+
+static inline bool str_eq(string_t s1, string_t s2)
+{
+    if (s1.len != s2.len)
+        return false;
+    for (char *p1 = s1.p, *p2 = s2.p; p1 != s1.p + s1.len; ++p1, ++p2) {
+        if (*p1 != *p2)
+            return false;
+    }
+    return true;
+}
 
 #endif
