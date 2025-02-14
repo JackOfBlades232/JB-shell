@@ -14,6 +14,11 @@ typedef struct string_tag {
     u64 len;
 } string_t;
 
+static inline b32 string_is_valid(const string_t *s)
+{
+    return s->p ? true : false;
+}
+
 static inline b32 string_is_empty(const string_t *s)
 {
     return (s->p && s->len > 0) ? false : true;

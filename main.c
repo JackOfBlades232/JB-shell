@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <pwd.h>
 #include <limits.h>
 #include <stdalign.h>
@@ -248,7 +249,7 @@ static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
                 continue;
             }
 
-            if (string_is_empty(&tok.id))
+            if (!string_is_valid(&tok.id))
                 tok.id.p = (char *)arena_allocate(symbols_arena, 0);
 
             assert(tok.id.p + tok.id.len - symbols_arena->buf.p <
@@ -316,6 +317,11 @@ typedef struct command_node_tag {
     string_t cmd;
     arg_node_t *args;    
     u64 arg_cnt;
+
+    string_t stdin_redir;
+    string_t stdout_redir;
+    string_t stdout_append_redir;
+    // @TODO: compress/alias?
 } command_node_t;
 
 typedef enum uncond_link_tag {
@@ -353,6 +359,14 @@ static void print_command(command_node_t const *cmd, int indentation)
             printf(", <%.*s>", STR_PRINTF_ARGS(arg->name));
         printf("]");
     }
+    if (string_is_valid(&cmd->stdin_redir))
+        printf(" stdin -> %.*s", STR_PRINTF_ARGS(cmd->stdin_redir));
+    if (string_is_valid(&cmd->stdout_redir))
+        printf(" stdout -> %.*s", STR_PRINTF_ARGS(cmd->stdout_redir));
+    else if (string_is_valid(&cmd->stdout_append_redir)) {
+        printf(" stdout -> append to %.*s",
+               STR_PRINTF_ARGS(cmd->stdout_append_redir));
+    }
     putchar('\n');
 }
 
@@ -382,33 +396,60 @@ token_t parse_command(lexer_t *lexer, command_node_t *out_cmd, arena_t *arena)
     arg_node_t *last_arg = NULL;
 
     while (!tok_is_command_sep(tok = get_next_token(lexer, arena))) {
-        if (tok.type != e_tt_ident) {
-            fprintf(stderr,
-                    "Parser error: </>/>> not implemented yet (at char %lu)\n",
-                    lexer->pos);
+        if (tok.type == e_tt_in) {
+            if (string_is_valid(&out_cmd->stdin_redir)) { // @TODO: elaborate
+                tok.type = e_tt_error;
+                break; 
+            }
+
+            token_t next = get_next_token(lexer, arena);
+            if (next.type != e_tt_ident) { // @TODO: elaborate
+                tok.type = e_tt_error;
+                break;
+            } 
+            out_cmd->stdin_redir = next.id;
+        } else if (tok.type == e_tt_out || tok.type == e_tt_append) {
+            if (string_is_valid(&out_cmd->stdout_redir) ||
+                string_is_valid(&out_cmd->stdout_append_redir))
+            { // @TODO: elaborate
+                tok.type = e_tt_error;
+                break; 
+            }
+
+            token_t next = get_next_token(lexer, arena);
+            if (next.type != e_tt_ident) { // @TODO: elaborate
+                tok.type = e_tt_error;
+                break;
+            } 
+
+            if (tok.type == e_tt_out)
+                out_cmd->stdout_redir = next.id;
+            else
+                out_cmd->stdout_append_redir = next.id;
+        } else if (tok.type == e_tt_ident) {
+            // @TODO: assert stuff
+
+            switch (state) {
+            case e_cst_init:
+                out_cmd->cmd = tok.id;
+                state = e_cst_parsing_args;
+                break;
+            case e_cst_parsing_args: {
+                arg_node_t *arg = ARENA_ALLOC(arena, arg_node_t);
+                arg->name = tok.id;
+                arg->next = NULL;
+                if (out_cmd->arg_cnt == 0)
+                    out_cmd->args = arg;
+                else
+                    last_arg->next = arg; 
+                last_arg = arg;
+                ++out_cmd->arg_cnt;
+            } break;
+            default: 
+            }
+        } else { // @TODO: elaborate
             tok.type = e_tt_error;
             break;
-        }
-
-        // @TODO: assert stuff
-
-        switch (state) {
-        case e_cst_init:
-            out_cmd->cmd = tok.id;
-            state = e_cst_parsing_args;
-            break;
-        case e_cst_parsing_args: {
-            arg_node_t *arg = ARENA_ALLOC(arena, arg_node_t);
-            arg->name = tok.id;
-            arg->next = NULL;
-            if (out_cmd->arg_cnt == 0)
-                out_cmd->args = arg;
-            else
-                last_arg->next = arg; 
-            last_arg = arg;
-            ++out_cmd->arg_cnt;
-        } break;
-        default: 
         }
     }
 
@@ -494,7 +535,7 @@ root_node_t *parse_line(string_t line, arena_t *arena)
 // pipe
 // chaining
 // subshells
-// proper error reporting
+// proper error reporting, asserts of cmd format
 
 static int execute_command(command_node_t const *cmd, arena_t *arena, b32 bg)
 {
@@ -502,7 +543,8 @@ static int execute_command(command_node_t const *cmd, arena_t *arena, b32 bg)
     string_t const homedirstr = LITSTR("~");
 
     if (str_eq(cmd->cmd, cdstr)) {
-        // @TODO: should I disallow bg here?
+        if (bg)
+            return 0;
 
         if (cmd->arg_cnt > 1)
             return -1;
@@ -518,6 +560,21 @@ static int execute_command(command_node_t const *cmd, arena_t *arena, b32 bg)
         if (chdir(dir) != 0)
             return 1;
     } else {
+        int in_fd = STDIN_FILENO;
+        int out_fd = STDOUT_FILENO;
+        if (string_is_valid(&cmd->stdin_redir))
+            in_fd = open(cmd->stdin_redir.p, O_RDONLY);
+        if (string_is_valid(&cmd->stdout_redir)) {
+            out_fd = open(cmd->stdout_redir.p,
+                          O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        } else if (string_is_valid(&cmd->stdout_append_redir)) {
+            out_fd = open(cmd->stdout_append_redir.p,
+                          O_WRONLY | O_CREAT | O_APPEND, 0644);
+        }
+
+        if (in_fd < 0 || out_fd < 0)
+            return -2;
+
         char **argv = ARENA_ALLOC_N(arena, char *, cmd->arg_cnt + 2);
         argv[0] = cmd->cmd.p;
         u64 i = 1;
@@ -527,10 +584,23 @@ static int execute_command(command_node_t const *cmd, arena_t *arena, b32 bg)
 
         pid_t pid = fork();
         if (pid == 0) {
+            if (in_fd != STDIN_FILENO) {
+                dup2(in_fd, STDIN_FILENO);
+                close(in_fd);
+            }
+            if (out_fd != STDOUT_FILENO) {
+                dup2(out_fd, STDOUT_FILENO);
+                close(out_fd);
+            }
             int ret = execvp(argv[0], argv);
             exit(ret);
         } else if (pid == -1)
             return -2;
+
+        if (in_fd != STDIN_FILENO)
+            close(in_fd);
+        if (out_fd != STDOUT_FILENO)
+            close(out_fd);
 
         if (!bg) {
             pid_t awaited;
