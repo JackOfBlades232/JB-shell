@@ -7,7 +7,7 @@
 
 #include <stddef.h>
 
-static_assert(sizeof(char) == sizeof(u8));
+STATIC_ASSERT(sizeof(char) == sizeof(u8));
 
 typedef struct string_tag {
     char *p;

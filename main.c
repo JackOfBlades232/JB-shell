@@ -39,7 +39,7 @@ typedef struct arena_tag {
 
 static u8 *arena_allocate(arena_t *arena, u64 bytes)
 {
-    assert(buffer_is_valid(&arena->buf));
+    ASSERT(buffer_is_valid(&arena->buf));
     if (arena->allocated + bytes > arena->buf.sz)
         return NULL;
     u8 *ptr = (u8 *)arena->buf.p + arena->allocated;
@@ -50,8 +50,8 @@ static u8 *arena_allocate(arena_t *arena, u64 bytes)
 static u8 *arena_allocate_aligned(arena_t *arena, u64 bytes, u64 alignment)
 { 
     // malloc alignment must be enough (since arena itself is mallocd)
-    assert(alignment <= 16 && 16 % alignment == 0);
-    assert(buffer_is_valid(&arena->buf));
+    ASSERT(alignment <= 16 && 16 % alignment == 0);
+    ASSERT(buffer_is_valid(&arena->buf));
     u64 const required_start =
         (arena->allocated + alignment - 1) & ~(alignment - 1);
 
@@ -91,8 +91,8 @@ static inline b32 is_whitespace(int c)
 
 static int read_line_from_stream(FILE *f, buffer_t *buf, string_t *out_string)
 {
-    assert(buffer_is_valid(buf));
-    assert(buf->sz > 0);
+    ASSERT(buffer_is_valid(buf));
+    ASSERT(buf->sz > 0);
 
     string_t s = {buf->p, 0};
 
@@ -104,7 +104,7 @@ static int read_line_from_stream(FILE *f, buffer_t *buf, string_t *out_string)
     }
 
     if (c == EOF) {
-        assert(s.len == 0);
+        ASSERT(s.len == 0);
         return e_rl_eof;
     }
 
@@ -158,7 +158,7 @@ static inline int lexer_peek(lexer_t *lexer)
 }
 static inline void lexer_consume(lexer_t *lexer)
 {
-    assert(lexer->pos < lexer->line.len);
+    ASSERT(lexer->pos < lexer->line.len);
     ++lexer->pos;
 }
 
@@ -252,12 +252,12 @@ static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
             if (!string_is_valid(&tok.id))
                 tok.id.p = (char *)arena_allocate(symbols_arena, 0);
 
-            assert(tok.id.p + tok.id.len - symbols_arena->buf.p <
+            ASSERT(tok.id.p + tok.id.len - symbols_arena->buf.p <
                    symbols_arena->buf.sz);
 
             ++symbols_arena->allocated;
             
-            assert(c >= SCHAR_MIN && c <= SCHAR_MAX);
+            ASSERT(c >= SCHAR_MIN && c <= SCHAR_MAX);
             tok.id.p[tok.id.len++] = (char)c;
 
             screen_next = false;
@@ -287,17 +287,22 @@ static inline b32 tok_is_valid(token_t tok)
     return tok.type != e_tt_uninit && tok.type != e_tt_error;
 }
 
-static inline b32 tok_is_terminating(token_t tok)
+static inline b32 tok_is_end_of_shell(token_t tok)
 {
-    return tok.type == e_tt_eol || !tok_is_valid(tok);
+    return tok.type == e_tt_eol || tok.type == e_tt_rparen ||
+           !tok_is_valid(tok);
 }
 
-static inline b32 tok_is_command_sep(token_t tok)
+static inline b32 tok_is_cmd_elem_or_lparen(token_t tok)
 {
-    return tok_is_terminating(tok) || tok.type == e_tt_pipe ||
-           tok.type == e_tt_and || tok.type == e_tt_or ||
-           tok.type == e_tt_semicolon || tok.type == e_tt_background ||
-           tok.type == e_tt_lparen || tok.type == e_tt_rparen;
+    return tok.type == e_tt_ident || tok.type == e_tt_in ||
+           tok.type == e_tt_out || tok.type == e_tt_append ||
+           tok.type == e_tt_lparen;
+}
+
+static inline b32 tok_is_cond_sep(token_t tok)
+{
+    return tok.type == e_tt_and || tok.type == e_tt_or;
 }
 
 // @TODO (parser):
@@ -308,6 +313,8 @@ static inline b32 tok_is_command_sep(token_t tok)
 // subshells
 // proper error reporting
 
+struct uncond_chain_node_tag;
+
 typedef struct arg_node_tag {
     string_t name;
     struct arg_node_tag *next;
@@ -317,12 +324,53 @@ typedef struct command_node_tag {
     string_t cmd;
     arg_node_t *args;    
     u64 arg_cnt;
+} command_node_t;
+
+typedef enum runnable_type_tag {
+    e_rnt_cmd,
+    e_rnt_subshell,
+} runnable_type_t;
+
+typedef struct runnable_node_tag {
+    runnable_type_t type;
+    union {
+        command_node_t *cmd;
+        struct uncond_chain_node_tag *subshell;
+    };
+} runnable_node_t;
+
+typedef struct pipe_node_tag {
+    runnable_node_t runnable;
+    struct pipe_node_tag *next;
+} pipe_node_t;
+
+typedef struct pipe_chain_node_tag {
+    runnable_node_t first;
+    pipe_node_t *chain;
+    u64 cmd_cnt;
 
     string_t stdin_redir;
     string_t stdout_redir;
     string_t stdout_append_redir;
     // @TODO: compress/alias?
-} command_node_t;
+} pipe_chain_node_t;
+
+typedef enum cond_link_tag {
+    e_cl_if_success,
+    e_cl_if_failed
+} cond_link_t;
+
+typedef struct cond_node_tag {
+    pipe_chain_node_t pipe;
+    cond_link_t link;
+    struct cond_node_tag *next;
+} cond_node_t;
+
+typedef struct cond_chain_node_tag {
+    pipe_chain_node_t first;
+    cond_node_t *chain;
+    u64 cond_cnt;
+} cond_chain_node_t;
 
 typedef enum uncond_link_tag {
     e_ul_bg,
@@ -330,13 +378,13 @@ typedef enum uncond_link_tag {
 } uncond_link_t;
 
 typedef struct uncond_node_tag {
-    command_node_t cmd;
+    cond_chain_node_t cond;
     uncond_link_t link;
     struct uncond_node_tag *next;
 } uncond_node_t;
 
 typedef struct uncond_chain_node_tag {
-    command_node_t first;
+    cond_chain_node_t first;
     uncond_node_t *chain;
     u64 uncond_cnt;
 } uncond_chain_node_t;
@@ -349,6 +397,8 @@ static void print_indentation(int indentation)
         printf("    ");
 }
 
+static void print_uncond_chain(uncond_chain_node_t const *, int);
+
 static void print_command(command_node_t const *cmd, int indentation)
 {
     print_indentation(indentation);
@@ -359,46 +409,110 @@ static void print_command(command_node_t const *cmd, int indentation)
             printf(", <%.*s>", STR_PRINTF_ARGS(arg->name));
         printf("]");
     }
-    if (string_is_valid(&cmd->stdin_redir))
-        printf(" stdin -> %.*s", STR_PRINTF_ARGS(cmd->stdin_redir));
-    if (string_is_valid(&cmd->stdout_redir))
-        printf(" stdout -> %.*s", STR_PRINTF_ARGS(cmd->stdout_redir));
-    else if (string_is_valid(&cmd->stdout_append_redir)) {
-        printf(" stdout -> append to %.*s",
-               STR_PRINTF_ARGS(cmd->stdout_append_redir));
-    }
     putchar('\n');
+}
+
+static void print_runnable(runnable_node_t const *runnable, int indentation)
+{
+    if (runnable->type == e_rnt_cmd)
+        print_command(runnable->cmd, indentation);
+    else {
+        print_indentation(indentation);
+        printf("(\n");
+        print_uncond_chain(runnable->subshell, indentation + 1);
+        print_indentation(indentation);
+        printf(")\n");
+    }
+}
+
+static void print_pipe_chain(pipe_chain_node_t const *chain,
+                             int indentation)
+{
+    runnable_node_t const *runnable = &chain->first;
+    int const children_indentation =
+        chain->cmd_cnt > 0 ? indentation + 1 : indentation;
+    for (pipe_node_t *pipe = chain->chain; pipe; pipe = pipe->next) {
+        print_runnable(runnable, children_indentation);
+        print_indentation(indentation);
+        printf("|\n");
+        runnable = &pipe->runnable;
+    }
+    print_runnable(runnable, children_indentation);
+    if (string_is_valid(&chain->stdin_redir)) {
+        print_indentation(indentation);
+        printf("stdin -> %.*s\n", STR_PRINTF_ARGS(chain->stdin_redir));
+    }
+    if (string_is_valid(&chain->stdout_redir)) {
+        print_indentation(indentation);
+        printf("stdout -> %.*s\n", STR_PRINTF_ARGS(chain->stdout_redir));
+    } else if (string_is_valid(&chain->stdout_append_redir)) {
+        print_indentation(indentation);
+        printf("stdout -> append to %.*s\n",
+               STR_PRINTF_ARGS(chain->stdout_append_redir));
+    }
+}
+
+static void print_cond_chain(cond_chain_node_t const *chain,
+                             int indentation)
+{
+    pipe_chain_node_t const *pipe = &chain->first;
+    int const children_indentation =
+        chain->cond_cnt > 0 ? indentation + 1 : indentation;
+    for (cond_node_t *cond = chain->chain; cond; cond = cond->next) {
+        print_pipe_chain(pipe, children_indentation);
+        print_indentation(indentation);
+        printf("%s\n", cond->link == e_cl_if_success ? "&&" : "||");
+        pipe = &cond->pipe;
+    }
+    print_pipe_chain(pipe, children_indentation);
 }
 
 static void print_uncond_chain(uncond_chain_node_t const *chain,
                                int indentation)
 {
-    command_node_t const *cmd = &chain->first;
+    cond_chain_node_t const *cond = &chain->first;
+    int const children_indentation =
+        chain->uncond_cnt > 0 ? indentation + 1 : indentation;
     for (uncond_node_t *uncond = chain->chain; uncond; uncond = uncond->next) {
-        print_command(cmd, indentation + 1);
+        print_cond_chain(cond, children_indentation);
         print_indentation(indentation);
         printf("%s\n", uncond->link == e_ul_bg ? "&" : ";");
-        cmd = &uncond->cmd;
+        cond = &uncond->cond;
     }
-    print_command(cmd, indentation + 1);
+    print_cond_chain(cond, children_indentation);
 }
 
-token_t parse_command(lexer_t *lexer, command_node_t *out_cmd, arena_t *arena)
+// @TODO: ASSERT called functions return correct type subset token
+
+static token_t parse_uncond_chain(lexer_t *, uncond_chain_node_t *, arena_t *);
+
+static token_t parse_runnable(lexer_t *lexer,
+                              runnable_node_t *out_runnable,
+                              string_t *out_stdin_redir,
+                              string_t *out_stdout_redir,
+                              string_t *out_stdout_append_redir,
+                              arena_t *arena)
 {
     token_t tok = {};
 
     enum {
-        e_cst_init,
-        e_cst_parsing_args,
-    } state = e_cst_init;
+        e_st_init,
+        e_st_parsing_args,
+        e_st_parsed_subshell,
+    } state = e_st_init;
 
-    CLEAR(out_cmd);    
+    CLEAR(out_runnable);    
     arg_node_t *last_arg = NULL;
 
-    while (!tok_is_command_sep(tok = get_next_token(lexer, arena))) {
+    while (tok_is_cmd_elem_or_lparen(tok = get_next_token(lexer, arena))) {
+        // @TODO: ASSERT stuff
         if (tok.type == e_tt_in) {
-            if (string_is_valid(&out_cmd->stdin_redir)) { // @TODO: elaborate
-                tok.type = e_tt_error;
+            if (state == e_st_init) {
+                tok.type = e_tt_error; // @TODO: elaborate
+                break; 
+            }
+            if (string_is_valid(out_stdin_redir)) {
+                tok.type = e_tt_error; // @TODO: elaborate
                 break; 
             }
 
@@ -407,10 +521,14 @@ token_t parse_command(lexer_t *lexer, command_node_t *out_cmd, arena_t *arena)
                 tok.type = e_tt_error;
                 break;
             } 
-            out_cmd->stdin_redir = next.id;
+            *out_stdin_redir = next.id;
         } else if (tok.type == e_tt_out || tok.type == e_tt_append) {
-            if (string_is_valid(&out_cmd->stdout_redir) ||
-                string_is_valid(&out_cmd->stdout_append_redir))
+            if (state == e_st_init) {
+                tok.type = e_tt_error; // @TODO: elaborate
+                break; 
+            }
+            if (string_is_valid(out_stdout_redir) ||
+                string_is_valid(out_stdout_append_redir))
             { // @TODO: elaborate
                 tok.type = e_tt_error;
                 break; 
@@ -423,55 +541,173 @@ token_t parse_command(lexer_t *lexer, command_node_t *out_cmd, arena_t *arena)
             } 
 
             if (tok.type == e_tt_out)
-                out_cmd->stdout_redir = next.id;
+                *out_stdout_redir = next.id;
             else
-                out_cmd->stdout_append_redir = next.id;
+                *out_stdout_append_redir = next.id;
         } else if (tok.type == e_tt_ident) {
-            // @TODO: assert stuff
+            if (state == e_st_parsed_subshell) {
+                tok.type = e_tt_error; // @TODO: elaborate
+                break; 
+            }
 
             switch (state) {
-            case e_cst_init:
-                out_cmd->cmd = tok.id;
-                state = e_cst_parsing_args;
+            case e_st_init:
+                out_runnable->cmd = ARENA_ALLOC(arena, command_node_t);
+                out_runnable->cmd->cmd = tok.id;
+                out_runnable->type = e_rnt_cmd;
+                state = e_st_parsing_args;
                 break;
-            case e_cst_parsing_args: {
+            case e_st_parsing_args: {
                 arg_node_t *arg = ARENA_ALLOC(arena, arg_node_t);
                 arg->name = tok.id;
                 arg->next = NULL;
-                if (out_cmd->arg_cnt == 0)
-                    out_cmd->args = arg;
+                if (out_runnable->cmd->arg_cnt == 0)
+                    out_runnable->cmd->args = arg;
                 else
                     last_arg->next = arg; 
                 last_arg = arg;
-                ++out_cmd->arg_cnt;
+                ++out_runnable->cmd->arg_cnt;
             } break;
             default: 
             }
-        } else { // @TODO: elaborate
-            tok.type = e_tt_error;
-            break;
+        } else {
+            assert(tok.type == e_tt_lparen);
+            if (state != e_st_init) {
+                tok.type = e_tt_error; // @TODO: elaborate
+                break; 
+            }
+
+            out_runnable->subshell = ARENA_ALLOC(arena, uncond_chain_node_t);
+            tok = parse_uncond_chain(lexer, out_runnable->subshell, arena);
+            if (tok.type != e_tt_rparen) {
+                tok.type = e_tt_error; // @TODO: elaborate
+                break; 
+            }
+
+            out_runnable->type = e_rnt_subshell;
+            state = e_st_parsed_subshell;
         }
     }
 
-    if (state == e_cst_init) // @TODO: elaborate
+    if (state == e_st_init) // @TODO: elaborate
         tok.type = e_tt_error;
 
     return tok;
 }
 
-root_node_t *parse_line(string_t line, arena_t *arena)
+static token_t parse_pipe_chain(lexer_t *lexer,
+                                pipe_chain_node_t *out_pipe_chain,
+                                arena_t *arena)
 {
-    lexer_t lexer = {line, 0};
+    enum {
+        e_st_init,
+        e_st_parsing_pipe,
+    } state = e_st_init;
 
-    uncond_chain_node_t *node = ARENA_ALLOC(arena, uncond_chain_node_t);
-    CLEAR(node);
+    CLEAR(out_pipe_chain);    
+
+    runnable_node_t runnable = {};
+    pipe_node_t *last_elem = NULL;
+
+    token_t sep = {};
+
+    do {
+        sep = parse_runnable(lexer, &runnable,
+                             &out_pipe_chain->stdin_redir,
+                             &out_pipe_chain->stdout_redir,
+                             &out_pipe_chain->stdout_append_redir,
+                             arena);
+
+        if (sep.type == e_tt_error)
+            break;
+
+        switch (state) {
+        case e_st_init:
+            out_pipe_chain->first = runnable;
+            state = e_st_parsing_pipe;
+            break;
+        case e_st_parsing_pipe: {
+            pipe_node_t *next_elem = ARENA_ALLOC(arena, pipe_node_t);
+            next_elem->runnable = runnable;
+            next_elem->next = NULL;
+            if (out_pipe_chain->cmd_cnt == 0)
+                out_pipe_chain->chain = next_elem;
+            else
+                last_elem->next = next_elem;
+            last_elem = next_elem;
+            ++out_pipe_chain->cmd_cnt;
+        } break;
+        }
+    } while (sep.type == e_tt_pipe);
+
+    if (state == e_st_init) // @TODO: elaborate
+        sep.type = e_tt_error;
+
+    return sep;
+}
+
+static token_t parse_cond_chain(lexer_t *lexer,
+                                cond_chain_node_t *out_cond_chain,
+                                arena_t *arena)
+{
+    CLEAR(out_cond_chain);
 
     enum {
-        e_lst_init,
-        e_lst_parsing_chain,
-    } state = e_lst_init;
+        e_st_init,
+        e_st_parsing_chain,
+    } state = e_st_init;
 
-    command_node_t cmd = {};
+    pipe_chain_node_t pipe = {};
+    cond_node_t *last_cond = NULL;
+
+    token_t sep = {};
+
+    do {
+        cond_link_t const link =
+            sep.type == e_tt_and ? e_cl_if_success : e_cl_if_failed;
+
+        sep = parse_pipe_chain(lexer, &pipe, arena);
+        if (sep.type == e_tt_error)
+            break;
+
+        switch (state) {
+        case e_st_init:
+            out_cond_chain->first = pipe;
+            state = e_st_parsing_chain;
+            break;
+        case e_st_parsing_chain: {
+            cond_node_t *next_cond = ARENA_ALLOC(arena, cond_node_t);
+            next_cond->pipe = pipe;
+            next_cond->link = link;
+            next_cond->next = NULL;
+            if (out_cond_chain->cond_cnt == 0)
+                out_cond_chain->chain = next_cond;
+            else
+                last_cond->next = next_cond;
+            last_cond = next_cond;
+            ++out_cond_chain->cond_cnt;
+        } break;
+        }
+    } while (tok_is_cond_sep(sep));
+
+    if (state == e_st_init) // @TODO: elaborate
+        sep.type = e_tt_error;
+
+    return sep;
+}
+
+static token_t parse_uncond_chain(lexer_t *lexer,
+                                  uncond_chain_node_t *out_uncond,
+                                  arena_t *arena)
+{
+    CLEAR(out_uncond);
+
+    enum {
+        e_st_init,
+        e_st_parsing_chain,
+    } state = e_st_init;
+
+    cond_chain_node_t cond = {};
     uncond_node_t *last_uncond = NULL;
 
     token_t sep = {};
@@ -480,52 +716,48 @@ root_node_t *parse_line(string_t line, arena_t *arena)
         uncond_link_t const link =
             sep.type == e_tt_background ? e_ul_bg : e_ul_wait;
 
-        sep = parse_command(&lexer, &cmd, arena);
+        sep = parse_cond_chain(lexer, &cond, arena);
         if (sep.type == e_tt_error)
             break;
 
-        if (!tok_is_terminating(sep) && 
-            sep.type != e_tt_semicolon &&
-            sep.type != e_tt_background)
-        {
-            fprintf(stderr,
-                    "Parser error: ||/&&/| not implemented yet (at char %lu)\n",
-                    lexer.pos);
-            sep.type = e_tt_error;
-            break;
-        }
-
         switch (state) {
-        case e_lst_init:
-            node->first = cmd;
-            state = e_lst_parsing_chain;
+        case e_st_init:
+            out_uncond->first = cond;
+            state = e_st_parsing_chain;
             break;
-        case e_lst_parsing_chain: {
+        case e_st_parsing_chain: {
             uncond_node_t *next_uncond = ARENA_ALLOC(arena, uncond_node_t);
-            next_uncond->cmd = cmd;
+            next_uncond->cond = cond;
             next_uncond->link = link;
             next_uncond->next = NULL;
-            if (node->uncond_cnt == 0)
-                node->chain = next_uncond;
+            if (out_uncond->uncond_cnt == 0)
+                out_uncond->chain = next_uncond;
             else
                 last_uncond->next = next_uncond;
             last_uncond = next_uncond;
-            ++node->uncond_cnt;
+            ++out_uncond->uncond_cnt;
         } break;
         }
-    } while (!tok_is_terminating(sep));
+    } while (!tok_is_end_of_shell(sep));
+
+    return sep;
+}
+
+static root_node_t *parse_line(string_t line, arena_t *arena)
+{
+    lexer_t lexer = {line, 0};
+
+    uncond_chain_node_t *node = ARENA_ALLOC(arena, uncond_chain_node_t);
+    token_t sep = parse_uncond_chain(&lexer, node, arena);
 
     if (sep.type == e_tt_error) {
         fprintf(stderr,
                 "Parser or lexer error: [unspecified error] (at char %lu)\n",
                 lexer.pos);
         return NULL;
-    } else if (sep.type != e_tt_eol) {
-        fprintf(stderr,
-                "Parser error: encountered uniplemented token #%d "
-                "(at char %lu)\n", sep.type, lexer.pos);
-        return NULL;
     }
+
+    ASSERT(sep.type == e_tt_eol);
 
     return node;
 }
@@ -535,8 +767,9 @@ root_node_t *parse_line(string_t line, arena_t *arena)
 // pipe
 // chaining
 // subshells
-// proper error reporting, asserts of cmd format
+// proper error reporting, ASSERTs of cmd format
 
+#if 0
 static int execute_command(command_node_t const *cmd, arena_t *arena, b32 bg)
 {
     string_t const cdstr = LITSTR("cd");
@@ -629,6 +862,7 @@ static int execute_uncond_chain(uncond_chain_node_t const *chain,
     }
     return execute_command(cmd, arena, false);
 }
+#endif
 
 int main()
 {
@@ -676,9 +910,11 @@ int main()
 
         print_uncond_chain(ast_root, 0);
 
+#if 0
         int retcode = execute_uncond_chain(ast_root, &inerpreter_arena);
         if (retcode != 0)
             fprintf(stderr, "Interpreter error: failed w/ code %d\n", retcode);
+#endif
 
     loop_end:
         arena_drop(&parser_arena);

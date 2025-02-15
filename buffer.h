@@ -34,7 +34,7 @@ static inline buffer_t allocate_buffer(u64 sz)
 
 static inline void free_buffer(buffer_t *s)
 {
-    assert(buffer_is_valid(s));
+    ASSERT(buffer_is_valid(s));
     free(s->p);
     clear_buffer(s);
 }
