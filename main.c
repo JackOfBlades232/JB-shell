@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <signal.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <limits.h>
@@ -73,10 +74,10 @@ static inline void arena_drop(arena_t *arena)
     (type_ *)arena_allocate_aligned(     \
         (arena_), (n_) * sizeof(type_), _Alignof(type_))
 
-enum readline_res_t {
-    e_rl_ok = 0,
-    e_rl_string_overflow = -1,
-    e_rl_eof = -2,
+enum {
+    c_rl_ok = 0,
+    c_rl_string_overflow = -1,
+    c_rl_eof = -2,
 };
 
 static inline b32 is_eol(int c)
@@ -100,17 +101,17 @@ static int read_line_from_stream(FILE *f, buffer_t *buf, string_t *out_string)
     while (!is_eol(c = getchar())) {
         s.p[s.len++] = (char)c;
         if (s.len >= buf->sz)
-            return e_rl_string_overflow;
+            return c_rl_string_overflow;
     }
 
     if (c == EOF) {
         ASSERT(s.len == 0);
-        return e_rl_eof;
+        return c_rl_eof;
     }
 
     s.p[s.len] = '\0';
     *out_string = s;
-    return e_rl_ok;
+    return c_rl_ok;
 }
 
 static void consume_input(FILE *f)
@@ -295,9 +296,10 @@ static inline b32 tok_is_end_of_shell(token_t tok)
 
 static inline b32 tok_is_cmd_elem_or_lparen(token_t tok)
 {
-    return tok.type == e_tt_ident || tok.type == e_tt_in ||
-           tok.type == e_tt_out || tok.type == e_tt_append ||
-           tok.type == e_tt_lparen;
+    return
+        tok.type == e_tt_ident || tok.type == e_tt_in ||
+        tok.type == e_tt_out || tok.type == e_tt_append ||
+        tok.type == e_tt_lparen;
 }
 
 static inline b32 tok_is_cond_sep(token_t tok)
@@ -312,6 +314,7 @@ static inline b32 tok_is_cond_sep(token_t tok)
 // chaining
 // subshells
 // proper error reporting
+// tighter validation
 
 struct uncond_chain_node_tag;
 
@@ -353,6 +356,8 @@ typedef struct pipe_chain_node_tag {
     string_t stdout_redir;
     string_t stdout_append_redir;
     // @TODO: compress/alias?
+
+    b32 is_cd;
 } pipe_chain_node_t;
 
 typedef enum cond_link_tag {
@@ -361,7 +366,7 @@ typedef enum cond_link_tag {
 } cond_link_t;
 
 typedef struct cond_node_tag {
-    pipe_chain_node_t pipe;
+    pipe_chain_node_t pp;
     cond_link_t link;
     struct cond_node_tag *next;
 } cond_node_t;
@@ -431,11 +436,11 @@ static void print_pipe_chain(pipe_chain_node_t const *chain,
     runnable_node_t const *runnable = &chain->first;
     int const children_indentation =
         chain->cmd_cnt > 0 ? indentation + 1 : indentation;
-    for (pipe_node_t *pipe = chain->chain; pipe; pipe = pipe->next) {
+    for (pipe_node_t *pp = chain->chain; pp; pp = pp->next) {
         print_runnable(runnable, children_indentation);
         print_indentation(indentation);
         printf("|\n");
-        runnable = &pipe->runnable;
+        runnable = &pp->runnable;
     }
     print_runnable(runnable, children_indentation);
     if (string_is_valid(&chain->stdin_redir)) {
@@ -455,16 +460,16 @@ static void print_pipe_chain(pipe_chain_node_t const *chain,
 static void print_cond_chain(cond_chain_node_t const *chain,
                              int indentation)
 {
-    pipe_chain_node_t const *pipe = &chain->first;
+    pipe_chain_node_t const *pp = &chain->first;
     int const children_indentation =
         chain->cond_cnt > 0 ? indentation + 1 : indentation;
     for (cond_node_t *cond = chain->chain; cond; cond = cond->next) {
-        print_pipe_chain(pipe, children_indentation);
+        print_pipe_chain(pp, children_indentation);
         print_indentation(indentation);
         printf("%s\n", cond->link == e_cl_if_success ? "&&" : "||");
-        pipe = &cond->pipe;
+        pp = &cond->pp;
     }
-    print_pipe_chain(pipe, children_indentation);
+    print_pipe_chain(pp, children_indentation);
 }
 
 static void print_uncond_chain(uncond_chain_node_t const *chain,
@@ -484,14 +489,60 @@ static void print_uncond_chain(uncond_chain_node_t const *chain,
 
 // @TODO: ASSERT called functions return correct type subset token
 
+string_t const cdstr = LITSTR("cd");
+string_t const homedirstr = LITSTR("~");
+
+static b32 command_is_cd(command_node_t const *cmd)
+{
+    return str_eq(cmd->cmd, cdstr);
+}
+
+enum {
+    c_not_cd,
+    c_is_cd,
+    c_invalid_cd,
+};
+
+// cd can not be part of a pipe, must have 0 or 1 args & cant have io redir
+static int check_if_pipe_is_cd(pipe_chain_node_t const *pp)
+{
+    for (pipe_node_t *elem = pp->chain; elem; elem = elem->next) {
+        if (elem->runnable.type == e_rnt_cmd &&
+            command_is_cd(pp->first.cmd))
+        {
+            // Can't have complex pipe w/ cd
+            return c_invalid_cd;
+        }
+    }
+
+    if (pp->first.type != e_rnt_cmd || !command_is_cd(pp->first.cmd))
+        return c_not_cd;
+
+    if (pp->cmd_cnt > 0)
+        return c_invalid_cd;
+
+    if (string_is_valid(&pp->stdin_redir) ||
+        string_is_valid(&pp->stdout_redir) ||
+        string_is_valid(&pp->stdout_append_redir))
+    {
+        return c_invalid_cd;
+    }
+
+    if (pp->first.cmd->arg_cnt > 1)
+        return c_invalid_cd;
+
+    return c_is_cd;
+}
+
 static token_t parse_uncond_chain(lexer_t *, uncond_chain_node_t *, arena_t *);
 
-static token_t parse_runnable(lexer_t *lexer,
-                              runnable_node_t *out_runnable,
-                              string_t *out_stdin_redir,
-                              string_t *out_stdout_redir,
-                              string_t *out_stdout_append_redir,
-                              arena_t *arena)
+static token_t parse_runnable(
+    lexer_t *lexer,
+    runnable_node_t *out_runnable,
+    string_t *out_stdin_redir,
+    string_t *out_stdout_redir,
+    string_t *out_stdout_append_redir,
+    arena_t *arena)
 {
     token_t tok = {};
 
@@ -553,6 +604,7 @@ static token_t parse_runnable(lexer_t *lexer,
             switch (state) {
             case e_st_init:
                 out_runnable->cmd = ARENA_ALLOC(arena, command_node_t);
+                CLEAR(out_runnable->cmd);
                 out_runnable->cmd->cmd = tok.id;
                 out_runnable->type = e_rnt_cmd;
                 state = e_st_parsing_args;
@@ -595,9 +647,8 @@ static token_t parse_runnable(lexer_t *lexer,
     return tok;
 }
 
-static token_t parse_pipe_chain(lexer_t *lexer,
-                                pipe_chain_node_t *out_pipe_chain,
-                                arena_t *arena)
+static token_t parse_pipe_chain(
+    lexer_t *lexer, pipe_chain_node_t *out_pipe_chain, arena_t *arena)
 {
     enum {
         e_st_init,
@@ -612,11 +663,12 @@ static token_t parse_pipe_chain(lexer_t *lexer,
     token_t sep = {};
 
     do {
-        sep = parse_runnable(lexer, &runnable,
-                             &out_pipe_chain->stdin_redir,
-                             &out_pipe_chain->stdout_redir,
-                             &out_pipe_chain->stdout_append_redir,
-                             arena);
+        sep = parse_runnable(
+            lexer, &runnable,
+            &out_pipe_chain->stdin_redir,
+            &out_pipe_chain->stdout_redir,
+            &out_pipe_chain->stdout_append_redir,
+            arena);
 
         if (sep.type == e_tt_error)
             break;
@@ -643,12 +695,17 @@ static token_t parse_pipe_chain(lexer_t *lexer,
     if (state == e_st_init) // @TODO: elaborate
         sep.type = e_tt_error;
 
+    int pipe_cd_res = check_if_pipe_is_cd(out_pipe_chain);
+    if (pipe_cd_res == c_is_cd) 
+        out_pipe_chain->is_cd = true;
+    if (pipe_cd_res == c_invalid_cd) // @TODO: elaborate
+        sep.type = e_tt_error;
+
     return sep;
 }
 
-static token_t parse_cond_chain(lexer_t *lexer,
-                                cond_chain_node_t *out_cond_chain,
-                                arena_t *arena)
+static token_t parse_cond_chain(
+    lexer_t *lexer, cond_chain_node_t *out_cond_chain, arena_t *arena)
 {
     CLEAR(out_cond_chain);
 
@@ -657,7 +714,7 @@ static token_t parse_cond_chain(lexer_t *lexer,
         e_st_parsing_chain,
     } state = e_st_init;
 
-    pipe_chain_node_t pipe = {};
+    pipe_chain_node_t pp = {};
     cond_node_t *last_cond = NULL;
 
     token_t sep = {};
@@ -666,18 +723,18 @@ static token_t parse_cond_chain(lexer_t *lexer,
         cond_link_t const link =
             sep.type == e_tt_and ? e_cl_if_success : e_cl_if_failed;
 
-        sep = parse_pipe_chain(lexer, &pipe, arena);
+        sep = parse_pipe_chain(lexer, &pp, arena);
         if (sep.type == e_tt_error)
             break;
 
         switch (state) {
         case e_st_init:
-            out_cond_chain->first = pipe;
+            out_cond_chain->first = pp;
             state = e_st_parsing_chain;
             break;
         case e_st_parsing_chain: {
             cond_node_t *next_cond = ARENA_ALLOC(arena, cond_node_t);
-            next_cond->pipe = pipe;
+            next_cond->pp = pp;
             next_cond->link = link;
             next_cond->next = NULL;
             if (out_cond_chain->cond_cnt == 0)
@@ -696,9 +753,8 @@ static token_t parse_cond_chain(lexer_t *lexer,
     return sep;
 }
 
-static token_t parse_uncond_chain(lexer_t *lexer,
-                                  uncond_chain_node_t *out_uncond,
-                                  arena_t *arena)
+static token_t parse_uncond_chain(
+    lexer_t *lexer, uncond_chain_node_t *out_uncond, arena_t *arena)
 {
     CLEAR(out_uncond);
 
@@ -769,19 +825,90 @@ static root_node_t *parse_line(string_t line, arena_t *arena)
 // subshells
 // proper error reporting, ASSERTs of cmd format
 
-#if 0
-static int execute_command(command_node_t const *cmd, arena_t *arena, b32 bg)
+void sigchld_handler(int)
 {
-    string_t const cdstr = LITSTR("cd");
-    string_t const homedirstr = LITSTR("~");
+    signal(SIGCHLD, sigchld_handler);
+    while (wait4(-1, NULL, WNOHANG, NULL) > 0)
+        ;
+}
 
-    if (str_eq(cmd->cmd, cdstr)) {
-        if (bg)
-            return 0;
+static int execute_uncond_chain(uncond_chain_node_t const *, arena_t *);
 
-        if (cmd->arg_cnt > 1)
-            return -1;
+typedef int fd_pair_t[2]; 
+
+static int await_processes(int *pids, int count)
+{
+    for (;;) {
+        int status;
+        int wr = wait(&status);
+        ASSERT(wr > 0);
+        
+        if (wr == pids[count - 1]) {
+            // This also collects everithing before sigchld was reinstated
+            sigchld_handler(0);
+            return WIFEXITED(status) ? WEXITSTATUS(status) : -2;
+        }
+    }
     
+}
+
+static void close_fd_pair(fd_pair_t pair)
+{
+    if (pair[0] != STDIN_FILENO)
+        close(pair[0]);
+    if (pair[1] != STDOUT_FILENO)
+        close(pair[1]);
+    pair[0] = STDIN_FILENO;
+    pair[1] = STDOUT_FILENO;
+}
+
+static void close_fd_pairs(fd_pair_t *pairs, int count)
+{
+    for (fd_pair_t *p = pairs; p != pairs + count; ++p)
+        close_fd_pair(*p);
+}
+
+static int execute_runnable(
+    runnable_node_t const *runnable,
+    fd_pair_t *io_fd_pairs, int fd_pair_cnt,
+    int proc_id, arena_t *arena)
+{
+    pid_t pid = fork();
+    if (pid == 0) {
+        signal(SIGCHLD, SIG_DFL);
+
+        if (io_fd_pairs[proc_id][0] != STDIN_FILENO)
+            dup2(io_fd_pairs[proc_id][0], STDIN_FILENO);
+        if (io_fd_pairs[proc_id][1] != STDOUT_FILENO)
+            dup2(io_fd_pairs[proc_id][1], STDOUT_FILENO);
+
+        close_fd_pairs(io_fd_pairs, fd_pair_cnt);
+
+        if (runnable->type == e_rnt_cmd) {
+            command_node_t const *cmd = runnable->cmd;
+            char **argv = ARENA_ALLOC_N(arena, char *, cmd->arg_cnt + 2);
+            argv[0] = cmd->cmd.p;
+            u64 i = 1;
+            for (arg_node_t *arg = cmd->args; arg; arg = arg->next)
+                argv[i++] = arg->name.p;
+            argv[i] = NULL;
+
+            execvp(argv[0], argv);
+            perror(argv[0]);
+            _exit(1);
+        } else {
+            _exit(execute_uncond_chain(runnable->subshell, arena));
+        }
+    }
+
+    close_fd_pair(io_fd_pairs[proc_id]);
+    return pid;
+}
+
+static int execute_pipe_chain(pipe_chain_node_t const *pp, arena_t *arena)
+{
+    if (pp->is_cd) {
+        command_node_t const *cmd = pp->first.cmd;
         char const *dir = NULL;
 
         if (cmd->arg_cnt == 0 || str_eq(cmd->args->name, homedirstr)) {
@@ -790,79 +917,108 @@ static int execute_command(command_node_t const *cmd, arena_t *arena, b32 bg)
         } else
             dir = cmd->args->name.p;
 
-        if (chdir(dir) != 0)
-            return 1;
-    } else {
-        int in_fd = STDIN_FILENO;
-        int out_fd = STDOUT_FILENO;
-        if (string_is_valid(&cmd->stdin_redir))
-            in_fd = open(cmd->stdin_redir.p, O_RDONLY);
-        if (string_is_valid(&cmd->stdout_redir)) {
-            out_fd = open(cmd->stdout_redir.p,
-                          O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        } else if (string_is_valid(&cmd->stdout_append_redir)) {
-            out_fd = open(cmd->stdout_append_redir.p,
-                          O_WRONLY | O_CREAT | O_APPEND, 0644);
-        }
-
-        if (in_fd < 0 || out_fd < 0)
-            return -2;
-
-        char **argv = ARENA_ALLOC_N(arena, char *, cmd->arg_cnt + 2);
-        argv[0] = cmd->cmd.p;
-        u64 i = 1;
-        for (arg_node_t *arg = cmd->args; arg; arg = arg->next)
-            argv[i++] = arg->name.p;
-        argv[i] = NULL;
-
-        pid_t pid = fork();
-        if (pid == 0) {
-            if (in_fd != STDIN_FILENO) {
-                dup2(in_fd, STDIN_FILENO);
-                close(in_fd);
-            }
-            if (out_fd != STDOUT_FILENO) {
-                dup2(out_fd, STDOUT_FILENO);
-                close(out_fd);
-            }
-            int ret = execvp(argv[0], argv);
-            exit(ret);
-        } else if (pid == -1)
-            return -2;
-
-        if (in_fd != STDIN_FILENO)
-            close(in_fd);
-        if (out_fd != STDOUT_FILENO)
-            close(out_fd);
-
-        if (!bg) {
-            pid_t awaited;
-            int status;
-            while ((awaited = waitpid(-1, &status, 0)) != pid) {
-                if (awaited == -1)
-                    return -2;
-            }
-            if (!WIFEXITED(status))
-                return -2;
-
-            return WEXITSTATUS(status);
-        }
+        return chdir(dir) == 0 ? 0 : 1;
     }
 
-    return 0;
+    int elem_cnt = pp->cmd_cnt + 1;
+    int *pids = ARENA_ALLOC_N(arena, int, elem_cnt);
+    fd_pair_t *io_fd_pairs = ARENA_ALLOC_N(arena, fd_pair_t, elem_cnt);
+
+    for (int i = 0; i < elem_cnt; ++i) {
+        pids[i] = -1;
+        io_fd_pairs[i][0] = STDIN_FILENO;
+        io_fd_pairs[i][1] = STDOUT_FILENO;
+    }
+
+    if (string_is_valid(&pp->stdin_redir))
+        io_fd_pairs[0][0] = open(pp->stdin_redir.p, O_RDONLY);
+    if (string_is_valid(&pp->stdout_redir)) {
+        io_fd_pairs[elem_cnt - 1][1] =
+            open(pp->stdout_redir.p, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    } else if (string_is_valid(&pp->stdout_append_redir)) {
+        io_fd_pairs[elem_cnt - 1][1] =
+            open(pp->stdout_append_redir.p,
+                 O_WRONLY | O_CREAT | O_APPEND, 0644);
+    }
+
+    if (io_fd_pairs[0][0] < 0 || io_fd_pairs[elem_cnt - 1][1] < 0) {
+        close_fd_pairs(io_fd_pairs, elem_cnt);
+        return -2;
+    }
+
+    for (int i = 0; i < elem_cnt - 1; ++i) {
+        fd_pair_t fds = {};
+        int res = pipe(fds);
+        if (res != 0) {
+            close_fd_pairs(io_fd_pairs, elem_cnt);
+            return -2;
+        }
+
+        io_fd_pairs[i + 1][0] = fds[0];
+        io_fd_pairs[i][1] = fds[1];
+    }
+
+    signal(SIGCHLD, SIG_DFL);
+
+    runnable_node_t const *runnable = &pp->first;
+    int launched_proc_cnt = 0;
+    for (pipe_node_t *elem = pp->chain; elem; elem = elem->next) {
+        int this_proc_index = launched_proc_cnt++;
+        int pid = execute_runnable(
+            runnable, io_fd_pairs, elem_cnt, this_proc_index, arena);
+        if (pid == -1) {
+            close_fd_pairs(io_fd_pairs, elem_cnt);
+            return -2;
+        }
+        
+        pids[this_proc_index] = pid;
+        runnable = &elem->runnable;
+    }
+    int this_proc_index = launched_proc_cnt++;
+    int pid = execute_runnable(
+        runnable, io_fd_pairs, elem_cnt, this_proc_index, arena);
+    if (pid == -1) {
+        close_fd_pairs(io_fd_pairs, elem_cnt);
+        return -2;
+    }
+    pids[this_proc_index] = pid;
+
+    return await_processes(pids, launched_proc_cnt);
+}
+
+static int execute_cond_chain(cond_chain_node_t const *chain, arena_t *arena)
+{
+    pipe_chain_node_t const *pp = &chain->first;
+    for (cond_node_t *cond = chain->chain; cond; cond = cond->next) {
+        int res = execute_pipe_chain(pp, arena);
+
+        if (res == 0 && cond->link == e_cl_if_failed)
+            return res;
+        else if (res != 0 && cond->link == e_cl_if_success)
+            return res;
+
+        pp = &cond->pp;
+    }
+    return execute_pipe_chain(pp, arena);
 }
 
 static int execute_uncond_chain(uncond_chain_node_t const *chain,
                                 arena_t *arena)
 {
-    command_node_t const *cmd = &chain->first;
+    cond_chain_node_t const *cond = &chain->first;
     for (uncond_node_t *uncond = chain->chain; uncond; uncond = uncond->next) {
-        execute_command(cmd, arena, uncond->link == e_ul_bg);
-        cmd = &uncond->cmd;
+        if (uncond->link == e_ul_bg) {
+            pid_t pid = fork();
+            if (pid == -1)
+                return -2;
+            if (pid == 0)
+                _exit(execute_cond_chain(cond, arena));
+        } else
+            execute_cond_chain(cond, arena);
+        cond = &uncond->cond;
     }
-    return execute_command(cmd, arena, false);
+    return execute_cond_chain(cond, arena);
 }
-#endif
 
 int main()
 {
@@ -872,6 +1028,8 @@ int main()
         c_parser_mem_size = (c_program_mem_size / 2) - c_line_buf_size,
         c_interpreter_mem_size = c_program_mem_size / 2
     };
+
+    signal(SIGCHLD, sigchld_handler);
 
     int const is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
 
@@ -892,14 +1050,14 @@ int main()
         string_t line = {};
 
         int read_res = read_line_from_stream(stdin, &line_storage, &line);
-        if (read_res == e_rl_string_overflow) {
+        if (read_res == c_rl_string_overflow) {
             fprintf(stderr,
                     "The line is over the limit of %d charactes "
                     "and will not be processed\n",
                     c_line_buf_size);
             res = 1;
             break;
-        } else if (read_res == e_rl_eof)
+        } else if (read_res == c_rl_eof)
             break;
         else if (line.len == 0)
             goto loop_end;
@@ -910,11 +1068,9 @@ int main()
 
         print_uncond_chain(ast_root, 0);
 
-#if 0
         int retcode = execute_uncond_chain(ast_root, &inerpreter_arena);
         if (retcode != 0)
             fprintf(stderr, "Interpreter error: failed w/ code %d\n", retcode);
-#endif
 
     loop_end:
         arena_drop(&parser_arena);
@@ -922,8 +1078,7 @@ int main()
     }
 
     pid_t awaited;
-    int status_sink;
-    while ((awaited = waitpid(-1, &status_sink, 0)) > 0)
+    while ((awaited = waitpid(-1, NULL, 0)) > 0)
         ;
 
     free_buffer(&memory);
