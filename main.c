@@ -105,7 +105,7 @@ static int read_line_from_stream(FILE *f, buffer_t *buf, string_t *out_string)
     }
 
     if (c == EOF) {
-        ASSERT(s.len == 0);
+        s.len = 0;
         return c_rl_eof;
     }
 
@@ -308,11 +308,6 @@ static inline b32 tok_is_cond_sep(token_t tok)
 }
 
 // @TODO (parser):
-// background
-// In/out/append
-// pipe
-// chaining
-// subshells
 // proper error reporting
 // tighter validation
 
@@ -819,11 +814,10 @@ static root_node_t *parse_line(string_t line, arena_t *arena)
 }
 
 // @TODO (Interpreter):
-// In/out/append
-// pipe
-// chaining
-// subshells
 // proper error reporting, ASSERTs of cmd format
+// test suite
+
+typedef int fd_pair_t[2]; 
 
 void sigchld_handler(int)
 {
@@ -832,15 +826,24 @@ void sigchld_handler(int)
         ;
 }
 
-static int execute_uncond_chain(uncond_chain_node_t const *, arena_t *);
+static void detach_group()
+{
+    pid_t pid = getpid();
+    setpgid(pid, pid);
+}
 
-typedef int fd_pair_t[2]; 
+static void set_pgroup_as_term_fg()
+{
+    signal(SIGTTOU, SIG_IGN); // otherwise tcsetpgrp will freeze it
+    tcsetpgrp(0, getpgid(getpid()));
+    signal(SIGTTOU, SIG_DFL);
+}
 
-static int await_processes(int *pids, int count)
+static int await_processes(pid_t *pids, int count)
 {
     for (;;) {
         int status;
-        int wr = wait(&status);
+        int wr = waitpid(-1, &status, 0);
         ASSERT(wr > 0);
         
         if (wr == pids[count - 1]) {
@@ -868,7 +871,9 @@ static void close_fd_pairs(fd_pair_t *pairs, int count)
         close_fd_pair(*p);
 }
 
-static int execute_runnable(
+static int execute_uncond_chain(uncond_chain_node_t const *, arena_t *);
+
+static pid_t execute_runnable(
     runnable_node_t const *runnable,
     fd_pair_t *io_fd_pairs, int fd_pair_cnt,
     int proc_id, arena_t *arena)
@@ -921,7 +926,7 @@ static int execute_pipe_chain(pipe_chain_node_t const *pp, arena_t *arena)
     }
 
     int elem_cnt = pp->cmd_cnt + 1;
-    int *pids = ARENA_ALLOC_N(arena, int, elem_cnt);
+    pid_t *pids = ARENA_ALLOC_N(arena, pid_t, elem_cnt);
     fd_pair_t *io_fd_pairs = ARENA_ALLOC_N(arena, fd_pair_t, elem_cnt);
 
     for (int i = 0; i < elem_cnt; ++i) {
@@ -964,7 +969,7 @@ static int execute_pipe_chain(pipe_chain_node_t const *pp, arena_t *arena)
     int launched_proc_cnt = 0;
     for (pipe_node_t *elem = pp->chain; elem; elem = elem->next) {
         int this_proc_index = launched_proc_cnt++;
-        int pid = execute_runnable(
+        pid_t pid = execute_runnable(
             runnable, io_fd_pairs, elem_cnt, this_proc_index, arena);
         if (pid == -1) {
             close_fd_pairs(io_fd_pairs, elem_cnt);
@@ -975,7 +980,7 @@ static int execute_pipe_chain(pipe_chain_node_t const *pp, arena_t *arena)
         runnable = &elem->runnable;
     }
     int this_proc_index = launched_proc_cnt++;
-    int pid = execute_runnable(
+    pid_t pid = execute_runnable(
         runnable, io_fd_pairs, elem_cnt, this_proc_index, arena);
     if (pid == -1) {
         close_fd_pairs(io_fd_pairs, elem_cnt);
@@ -1011,13 +1016,46 @@ static int execute_uncond_chain(uncond_chain_node_t const *chain,
             pid_t pid = fork();
             if (pid == -1)
                 return -2;
-            if (pid == 0)
+            if (pid == 0) {
+                detach_group();
+
                 _exit(execute_cond_chain(cond, arena));
+            }
         } else
             execute_cond_chain(cond, arena);
         cond = &uncond->cond;
     }
     return execute_cond_chain(cond, arena);
+}
+
+static int execute_line(root_node_t const *ast, bool is_term, arena_t *arena)
+{
+    pid_t pid = fork();
+    if (pid == 0) {
+        detach_group();
+        if (is_term)
+            set_pgroup_as_term_fg();
+
+        _exit(execute_uncond_chain(ast, arena));
+    }
+
+    signal(SIGCHLD, SIG_DFL);
+
+    int res = -1;
+    if (pid > 0) {
+        int status;
+        int wr = waitpid(-1, &status, 0);
+        ASSERT(wr == pid);
+        if (WIFEXITED(status))
+            res = WEXITSTATUS(status);
+    }
+
+    if (is_term)
+        set_pgroup_as_term_fg();
+
+    sigchld_handler(0);
+
+    return res;
 }
 
 int main()
@@ -1068,7 +1106,7 @@ int main()
 
         print_uncond_chain(ast_root, 0);
 
-        int retcode = execute_uncond_chain(ast_root, &inerpreter_arena);
+        int retcode = execute_line(ast_root, is_term, &inerpreter_arena);
         if (retcode != 0)
             fprintf(stderr, "Interpreter error: failed w/ code %d\n", retcode);
 
