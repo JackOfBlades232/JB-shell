@@ -90,6 +90,12 @@ static inline b32 is_whitespace(int c)
     return c == ' ' || c == '\t' || c == '\r';
 }
 
+// @TODO (line):
+// Simple editing
+// ^W ^U
+// Autocomplete: search fs
+// Autocomplete: for first word w/out slashes look in PATH instead
+
 static int read_line_from_stream(FILE *f, buffer_t *buf, string_t *out_string)
 {
     ASSERT(buffer_is_valid(buf));
@@ -447,8 +453,9 @@ static void print_pipe_chain(pipe_chain_node_t const *chain,
         printf("stdout -> %.*s\n", STR_PRINTF_ARGS(chain->stdout_redir));
     } else if (string_is_valid(&chain->stdout_append_redir)) {
         print_indentation(indentation);
-        printf("stdout -> append to %.*s\n",
-               STR_PRINTF_ARGS(chain->stdout_append_redir));
+        printf(
+            "stdout -> append to %.*s\n",
+            STR_PRINTF_ARGS(chain->stdout_append_redir));
     }
 }
 
@@ -802,9 +809,10 @@ static root_node_t *parse_line(string_t line, arena_t *arena)
     token_t sep = parse_uncond_chain(&lexer, node, arena);
 
     if (sep.type == e_tt_error) {
-        fprintf(stderr,
-                "Parser or lexer error: [unspecified error] (at char %lu)\n",
-                lexer.pos);
+        fprintf(
+            stderr,
+            "Parser or lexer error: [unspecified error] (at char %lu)\n",
+            lexer.pos);
         return NULL;
     }
 
@@ -1089,10 +1097,11 @@ int main()
 
         int read_res = read_line_from_stream(stdin, &line_storage, &line);
         if (read_res == c_rl_string_overflow) {
-            fprintf(stderr,
-                    "The line is over the limit of %d charactes "
-                    "and will not be processed\n",
-                    c_line_buf_size);
+            fprintf(
+                stderr,
+                "The line is over the limit of %d charactes "
+                "and will not be processed\n",
+                c_line_buf_size);
             res = 1;
             break;
         } else if (read_res == c_rl_eof)
