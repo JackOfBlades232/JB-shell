@@ -8,11 +8,15 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <signal.h>
+#include <termios.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <limits.h>
 #include <stdalign.h>
 #include <stdio.h>
+
+#define MIN(a_, b_) ((a_) < (b_) ? (a_) : (b_))
+#define MAX(a_, b_) ((a_) > (b_) ? (a_) : (b_))
 
 // @TODO: handle allocation failures somehow
 
@@ -20,6 +24,21 @@ static inline void mem_set(u8 *mem, u64 sz)
 {
     for (u8 *end = mem + sz; mem != end; ++mem)
         *mem = 0;
+}
+
+static inline void mem_cpy(u8 *to, u8 *from, u64 sz)
+{
+    for (u8 *end = to + sz; to != end; ++to, ++from)
+        *to = *from;
+}
+
+static inline void mem_cpy_bw(u8 *to, u8 *from, u64 sz)
+{
+    for (u8 *from_end = from + sz - 1, *to_end = to + sz - 1;
+        to_end != to - 1; --from_end, --to_end)
+    {
+        *to_end = *from_end;
+    }
 }
 
 #define CLEAR(addr_) mem_set((u8 *)(addr_), sizeof(*(addr_)))
@@ -90,13 +109,205 @@ static inline b32 is_whitespace(int c)
     return c == ' ' || c == '\t' || c == '\r';
 }
 
+typedef struct terminal_input_tag {
+    struct termios backup_ts;
+    char input_buf[64];
+    u32 buffered_chars_cnt;
+} terminal_input_t;
+
+static void init_term(terminal_input_t *term)
+{
+    tcgetattr(STDIN_FILENO, &term->backup_ts);
+}
+
+static void shutdown_term(terminal_input_t *term, bool drain)
+{
+    if (drain) {
+        int chars_read;
+        while ((chars_read =
+            read(STDIN_FILENO, term->input_buf, sizeof(term->input_buf))) > 0)
+        {
+        }
+    }
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &term->backup_ts);
+}
+
+static void start_terminal_editing(terminal_input_t *term)
+{
+    struct termios ts;
+    mem_cpy((u8 *)&ts, (u8 *)&term->backup_ts, sizeof(struct termios));    
+
+    ts.c_lflag &= ~(ICANON | IEXTEN | ISIG | ECHO);
+    ts.c_cc[VMIN] = 1;
+    ts.c_cc[VTIME] = 0;
+    ts.c_cc[VEOF] = 0;
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &ts);
+}
+
+static void finish_terminal_editing(terminal_input_t *term)
+{
+    tcsetattr(STDIN_FILENO, TCSANOW, &term->backup_ts);
+}
+
 // @TODO (line):
-// Simple editing
-// ^W ^U
 // Autocomplete: search fs
 // Autocomplete: for first word w/out slashes look in PATH instead
 
-static int read_line_from_stream(FILE *f, buffer_t *buf, string_t *out_string)
+// @TODO: make it not die under smoketests
+
+static int read_line_from_terminal(
+    buffer_t *buf, string_t *out_string, terminal_input_t *term)
+{
+    start_terminal_editing(term);
+
+    printf("> ");
+    fflush(stdout);
+
+    int res = c_rl_ok;
+
+    ASSERT(buffer_is_valid(buf));
+    ASSERT(buf->sz > 0);
+
+    string_t s = {buf->p, 0};
+    int epos = 0;
+
+    bool done = false;
+
+    enum {
+        e_st_dfl,
+        e_st_parsed_esc,
+        e_st_ready_for_arrow
+    } state = e_st_dfl;
+
+    while (!done) {
+        char *p;
+        int chars_consumed;
+        int prev_len = s.len;
+        int prev_epos = epos;
+
+        if (!term->buffered_chars_cnt) {
+            term->buffered_chars_cnt =
+                read(STDIN_FILENO, term->input_buf, sizeof(term->input_buf));
+            if (!term->buffered_chars_cnt) {
+                res = c_rl_eof;
+                break;
+            }
+        }
+
+        for (p = term->input_buf;
+            p != term->input_buf + term->buffered_chars_cnt;
+            ++p)
+        {
+            if (state == e_st_ready_for_arrow) {
+                if (*p == 67) {
+                    if (epos < s.len)
+                        ++epos;
+                    state = e_st_dfl;
+                    continue;
+                } else if (*p == 68) {
+                    if (epos > 0)
+                        --epos;
+                    state = e_st_dfl;
+                    continue;
+                }
+            }
+
+            switch (*p) {
+            case 27:
+                state = e_st_parsed_esc;
+                continue;
+            case 91:
+                if (state == e_st_parsed_esc) {
+                    state = e_st_ready_for_arrow;
+                    continue;
+                }
+            default:
+                state = e_st_dfl;
+            }
+
+            switch (*p) {
+            case 4:
+                res = c_rl_eof;
+                goto func_end;
+            case '\n': 
+                ++p;
+                done = true;
+                goto loop_end;
+            case 127:
+            case '\b':
+            case 23:
+            case 21: {
+                int chars_to_delete;
+                if (epos == 0)
+                    break;
+                if (*p == 23) {
+                    bool skipping_ws = true;
+                    chars_to_delete = 0;
+                    while (chars_to_delete < epos &&
+                        (!is_whitespace(s.p[epos - chars_to_delete - 1]) ||
+                        skipping_ws))
+                    {
+                        if (!is_whitespace(s.p[epos - chars_to_delete - 1]))
+                            skipping_ws = false;
+                        ++chars_to_delete;
+                    }
+                } else if (*p == 21) {
+                    chars_to_delete = epos;
+                } else {
+                    chars_to_delete = 1;
+                }
+                if (epos < s.len) {
+                    mem_cpy(
+                        (u8 *)(s.p + epos - chars_to_delete),
+                        (u8 *)(s.p + epos),
+                        s.len - epos);
+                }
+                epos -= chars_to_delete;
+                s.len -= chars_to_delete;
+            } break;
+            default:
+                if (s.len < buf->sz - 1) {
+                    if (epos < s.len) {
+                        mem_cpy_bw(
+                            (u8 *)(s.p + epos + 1), (u8 *)(s.p + epos),
+                            s.len - epos);
+                    }
+                    s.p[epos++] = *p;
+                    ++s.len;
+                }
+            }
+        }
+
+    loop_end:
+        chars_consumed = p - term->input_buf;
+        term->buffered_chars_cnt -= chars_consumed;
+        if (chars_consumed < term->buffered_chars_cnt)
+            mem_cpy((u8 *)term->input_buf, (u8 *)p, term->buffered_chars_cnt);
+
+        // @TODO: proper (no)reprint of too long lines (now they repeat)
+        for (int i = 0; i < prev_epos; ++i)
+            putchar('\b');
+        for (int i = 0; i < s.len; ++i)
+            putchar(s.p[i]);
+        for (int i = s.len; i < prev_len; ++i)
+            putchar(' ');
+        for (int i = epos; i < MAX(s.len, prev_len); ++i)
+            putchar('\b');
+        if (done)
+            putchar('\n');
+        fflush(stdout);
+    }
+
+func_end:
+    finish_terminal_editing(term);
+    s.p[s.len] = '\0';
+    *out_string = s;
+    return res;
+}
+
+static int read_line_from_regular_stdin(buffer_t *buf, string_t *out_string)
 {
     ASSERT(buffer_is_valid(buf));
     ASSERT(buf->sz > 0);
@@ -118,13 +329,6 @@ static int read_line_from_stream(FILE *f, buffer_t *buf, string_t *out_string)
     s.p[s.len] = '\0';
     *out_string = s;
     return c_rl_ok;
-}
-
-static void consume_input(FILE *f)
-{
-    int c;
-    while (!is_eol(c = getchar()))
-        ;
 }
 
 typedef enum token_type_tag {
@@ -491,11 +695,10 @@ static void print_uncond_chain(uncond_chain_node_t const *chain,
 
 // @TODO: ASSERT called functions return correct type subset token
 
-string_t const cdstr = LITSTR("cd");
-string_t const homedirstr = LITSTR("~");
-
+// @TODO: fix crash on unclosed "
 static b32 command_is_cd(command_node_t const *cmd)
 {
+    string_t const cdstr = LITSTR("cd");
     return str_eq(cmd->cmd, cdstr);
 }
 
@@ -924,6 +1127,8 @@ static int execute_pipe_chain(pipe_chain_node_t const *pp, arena_t *arena)
         command_node_t const *cmd = pp->first.cmd;
         char const *dir = NULL;
 
+        string_t const homedirstr = LITSTR("~");
+
         if (cmd->arg_cnt == 0 || str_eq(cmd->args->name, homedirstr)) {
             if ((dir = getenv("HOME")) == NULL)
                 dir = getpwuid(getuid())->pw_dir;
@@ -1075,10 +1280,6 @@ int main()
         c_interpreter_mem_size = c_program_mem_size / 2
     };
 
-    signal(SIGCHLD, sigchld_handler);
-
-    int const is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
-
     int res = 0;
 
     buffer_t memory = allocate_buffer(c_program_mem_size);
@@ -1089,21 +1290,32 @@ int main()
         c_interpreter_mem_size
     }};
 
-    for (;;) {
-        if (is_term)
-            printf("> ");
+    int const is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+    terminal_input_t term = {};
 
+    int read_res;
+
+    if (is_term)
+        init_term(&term);
+
+    signal(SIGCHLD, sigchld_handler);
+
+
+    for (;;) {
         string_t line = {};
 
-        int read_res = read_line_from_stream(stdin, &line_storage, &line);
+        if (is_term)
+            read_res = read_line_from_terminal(&line_storage, &line, &term);
+        else
+            read_res = read_line_from_regular_stdin(&line_storage, &line);
+
         if (read_res == c_rl_string_overflow) {
             fprintf(
                 stderr,
                 "The line is over the limit of %d charactes "
                 "and will not be processed\n",
                 c_line_buf_size);
-            res = 1;
-            break;
+            goto loop_end;
         } else if (read_res == c_rl_eof)
             break;
         else if (line.len == 0)
@@ -1131,7 +1343,7 @@ int main()
     free_buffer(&memory);
 
     if (is_term)
-        consume_input(stdin);
+        shutdown_term(&term, read_res != c_rl_eof);
 
     return res;
 }
