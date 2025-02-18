@@ -6,6 +6,7 @@
 
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 #include <signal.h>
 #include <termios.h>
@@ -19,6 +20,8 @@
 #define MAX(a_, b_) ((a_) > (b_) ? (a_) : (b_))
 
 // @TODO: handle allocation failures somehow
+
+// @TODO: fix crash with dangling rparen
 
 static inline void mem_set(u8 *mem, u64 sz)
 {
@@ -111,6 +114,7 @@ static inline b32 is_whitespace(int c)
 
 typedef struct terminal_input_tag {
     struct termios backup_ts;
+    struct winsize wsz; // @NOTE: does not support resize while editing one line
     char input_buf[64];
     u32 buffered_chars_cnt;
 } terminal_input_t;
@@ -144,11 +148,36 @@ static void start_terminal_editing(terminal_input_t *term)
     ts.c_cc[VEOF] = 0;
 
     tcsetattr(STDIN_FILENO, TCSANOW, &ts);
+
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &term->wsz);
 }
 
 static void finish_terminal_editing(terminal_input_t *term)
 {
     tcsetattr(STDIN_FILENO, TCSANOW, &term->backup_ts);
+}
+
+static void move_cursor_to_pos(int from, int to, terminal_input_t const *term)
+{
+    int from_lines = from / term->wsz.ws_col;
+    int from_chars = from % term->wsz.ws_col;
+    int to_lines = to / term->wsz.ws_col;
+    int to_chars = to % term->wsz.ws_col;
+
+    if (from_lines < to_lines) {
+        for (int i = 0; i < to_lines - from_lines; ++i)
+            printf("\033[B");
+    } else if (from_lines > to_lines) {
+        for (int i = 0; i < from_lines - to_lines; ++i)
+            printf("\033[A");
+    }
+    if (from_chars < to_chars) {
+        for (int i = 0; i < to_chars - from_chars; ++i)
+            printf("\033[C");
+    } else if (from_chars > to_chars) {
+        for (int i = 0; i < from_chars - to_chars; ++i)
+            printf("\033[D");
+    }
 }
 
 // @TODO (line):
@@ -200,17 +229,20 @@ static int read_line_from_terminal(
             p != term->input_buf + term->buffered_chars_cnt;
             ++p)
         {
+            // @TODO: do not display other control characters
             if (state == e_st_ready_for_arrow) {
-                if (*p == 67) {
+                switch (*p) {
+                case 67:
                     if (epos < s.len)
                         ++epos;
                     state = e_st_dfl;
                     continue;
-                } else if (*p == 68) {
+                case 68:
                     if (epos > 0)
                         --epos;
                     state = e_st_dfl;
                     continue;
+                default:
                 }
             }
 
@@ -223,18 +255,16 @@ static int read_line_from_terminal(
                     state = e_st_ready_for_arrow;
                     continue;
                 }
-            default:
-                state = e_st_dfl;
-            }
 
-            switch (*p) {
             case 4:
                 res = c_rl_eof;
                 goto func_end;
             case '\n': 
                 ++p;
                 done = true;
+                state = e_st_dfl;
                 goto loop_end;
+
             case 127:
             case '\b':
             case 23:
@@ -242,7 +272,7 @@ static int read_line_from_terminal(
                 int chars_to_delete;
                 if (epos == 0)
                     break;
-                if (*p == 23) {
+                if (*p == 23) { // @TODO: respect separators
                     bool skipping_ws = true;
                     chars_to_delete = 0;
                     while (chars_to_delete < epos &&
@@ -267,7 +297,25 @@ static int read_line_from_terminal(
                 epos -= chars_to_delete;
                 s.len -= chars_to_delete;
             } break;
+            case '\t':
+                // @TODO: if in token, look up
+                if (s.len < buf->sz - 1) {
+                    int chars_to_put = MIN(4, buf->sz - 1 - s.len);
+                    if (epos < s.len) {
+                        mem_cpy_bw(
+                            (u8 *)(s.p + epos + chars_to_put),
+                            (u8 *)(s.p + epos),
+                            s.len - epos);
+                    }
+                    s.len += chars_to_put;
+                    for (; chars_to_put; --chars_to_put)
+                        s.p[epos++] = ' ';
+                }
+                break;
+
             default:
+                if (*p < 32) // no control characters
+                    break;
                 if (s.len < buf->sz - 1) {
                     if (epos < s.len) {
                         mem_cpy_bw(
@@ -278,6 +326,8 @@ static int read_line_from_terminal(
                     ++s.len;
                 }
             }
+
+            state = e_st_dfl;
         }
 
     loop_end:
@@ -286,15 +336,12 @@ static int read_line_from_terminal(
         if (chars_consumed < term->buffered_chars_cnt)
             mem_cpy((u8 *)term->input_buf, (u8 *)p, term->buffered_chars_cnt);
 
-        // @TODO: proper (no)reprint of too long lines (now they repeat)
-        for (int i = 0; i < prev_epos; ++i)
-            putchar('\b');
-        for (int i = 0; i < s.len; ++i)
-            putchar(s.p[i]);
+        // @TODO: multiple lines still don't work!
+        move_cursor_to_pos(prev_epos + 2, 0, term);
+        printf("> %.*s", STR_PRINTF_ARGS(s));
         for (int i = s.len; i < prev_len; ++i)
             putchar(' ');
-        for (int i = epos; i < MAX(s.len, prev_len); ++i)
-            putchar('\b');
+        move_cursor_to_pos(MAX(s.len, prev_len) + 2, epos + 2, term);
         if (done)
             putchar('\n');
         fflush(stdout);
@@ -695,7 +742,6 @@ static void print_uncond_chain(uncond_chain_node_t const *chain,
 
 // @TODO: ASSERT called functions return correct type subset token
 
-// @TODO: fix crash on unclosed "
 static b32 command_is_cd(command_node_t const *cmd)
 {
     string_t const cdstr = LITSTR("cd");
@@ -900,11 +946,13 @@ static token_t parse_pipe_chain(
     if (state == e_st_init) // @TODO: elaborate
         sep.type = e_tt_error;
 
-    int pipe_cd_res = check_if_pipe_is_cd(out_pipe_chain);
-    if (pipe_cd_res == c_is_cd) 
-        out_pipe_chain->is_cd = true;
-    if (pipe_cd_res == c_invalid_cd) // @TODO: elaborate
-        sep.type = e_tt_error;
+    if (sep.type != e_tt_error) {
+        int pipe_cd_res = check_if_pipe_is_cd(out_pipe_chain);
+        if (pipe_cd_res == c_is_cd) 
+            out_pipe_chain->is_cd = true;
+        if (pipe_cd_res == c_invalid_cd) // @TODO: elaborate
+            sep.type = e_tt_error;
+    }
 
     return sep;
 }
