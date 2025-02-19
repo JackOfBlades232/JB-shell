@@ -19,9 +19,9 @@
 #define MIN(a_, b_) ((a_) < (b_) ? (a_) : (b_))
 #define MAX(a_, b_) ((a_) > (b_) ? (a_) : (b_))
 
-// @TODO: handle allocation failures somehow
+// @TODO (all): (smoke)tests
 
-// @TODO: fix crash with dangling rparen
+// @TODO: handle allocation failures somehow
 
 static inline void mem_set(u8 *mem, u64 sz)
 {
@@ -45,15 +45,6 @@ static inline void mem_cpy_bw(u8 *to, u8 *from, u64 sz)
 }
 
 #define CLEAR(addr_) mem_set((u8 *)(addr_), sizeof(*(addr_)))
-
-static inline b32 cstr_contains(char const *str, char c)
-{
-    for (; *str; ++str) {
-        if (*str == c)
-            return true;
-    }
-    return false;
-}
 
 typedef struct arena_tag {
     buffer_t buf;
@@ -110,6 +101,18 @@ static inline b32 is_eol(int c)
 static inline b32 is_whitespace(int c)
 {
     return c == ' ' || c == '\t' || c == '\r';
+}
+
+static inline b32 is_separator_char(int c)
+{
+    return
+        c == '|' || c == '&' || c == '>' || c == '<' ||
+        c == ';' || c == ')' || c == '(';
+}
+
+static inline b32 is_ws_or_sep(int c)
+{
+    return is_whitespace(c) || is_separator_char(c);
 }
 
 typedef struct terminal_input_tag {
@@ -184,8 +187,6 @@ static void move_cursor_to_pos(int from, int to, terminal_input_t const *term)
 // Autocomplete: search fs
 // Autocomplete: for first word w/out slashes look in PATH instead
 
-// @TODO: make it not die under smoketests
-
 static int read_line_from_terminal(
     buffer_t *buf, string_t *out_string, terminal_input_t *term)
 {
@@ -229,7 +230,6 @@ static int read_line_from_terminal(
             p != term->input_buf + term->buffered_chars_cnt;
             ++p)
         {
-            // @TODO: do not display other control characters
             if (state == e_st_ready_for_arrow) {
                 switch (*p) {
                 case 67:
@@ -272,14 +272,14 @@ static int read_line_from_terminal(
                 int chars_to_delete;
                 if (epos == 0)
                     break;
-                if (*p == 23) { // @TODO: respect separators
+                if (*p == 23) {
                     bool skipping_ws = true;
                     chars_to_delete = 0;
                     while (chars_to_delete < epos &&
-                        (!is_whitespace(s.p[epos - chars_to_delete - 1]) ||
+                        (!is_ws_or_sep(s.p[epos - chars_to_delete - 1]) ||
                         skipping_ws))
                     {
-                        if (!is_whitespace(s.p[epos - chars_to_delete - 1]))
+                        if (!is_ws_or_sep(s.p[epos - chars_to_delete - 1]))
                             skipping_ws = false;
                         ++chars_to_delete;
                     }
@@ -336,12 +336,15 @@ static int read_line_from_terminal(
         if (chars_consumed < term->buffered_chars_cnt)
             mem_cpy((u8 *)term->input_buf, (u8 *)p, term->buffered_chars_cnt);
 
-        // @TODO: multiple lines still don't work!
         move_cursor_to_pos(prev_epos + 2, 0, term);
-        printf("> %.*s", STR_PRINTF_ARGS(s));
-        for (int i = s.len; i < prev_len; ++i)
-            putchar(' ');
-        move_cursor_to_pos(MAX(s.len, prev_len) + 2, epos + 2, term);
+        int chars_printed = printf("> ");
+        for (int i = 0; i < MAX(s.len, prev_len); ++i) {
+            putchar(i < s.len ? s.p[i] : ' ');
+            if ((++chars_printed) % term->wsz.ws_col == 0)
+                putchar('\n');
+        }
+        if (epos < MAX(s.len, prev_len))
+            move_cursor_to_pos(MAX(s.len, prev_len) + 2, epos + 2, term);
         if (done)
             putchar('\n');
         fflush(stdout);
@@ -490,7 +493,7 @@ static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
 
         if (state == e_lst_parsing_identifier) {
             if (!in_quotes && !screen_next &&
-                (is_whitespace(c) || cstr_contains("<>|&;()", c)))
+                (is_whitespace(c) || is_separator_char(c)))
             {
                 break;
             }
@@ -894,6 +897,8 @@ static token_t parse_runnable(
 
     if (state == e_st_init) // @TODO: elaborate
         tok.type = e_tt_error;
+    else if (tok.type == e_tt_rparen) // @TODO: elaborate
+        tok.type = e_tt_error;
 
     return tok;
 }
@@ -1094,7 +1099,7 @@ static void detach_group()
 static void set_pgroup_as_term_fg()
 {
     signal(SIGTTOU, SIG_IGN); // otherwise tcsetpgrp will freeze it
-    tcsetpgrp(0, getpgid(getpid()));
+    tcsetpgrp(STDIN_FILENO, getpgid(getpid()));
     signal(SIGTTOU, SIG_DFL);
 }
 
@@ -1111,7 +1116,6 @@ static int await_processes(pid_t *pids, int count)
             return WIFEXITED(status) ? WEXITSTATUS(status) : -2;
         }
     }
-    
 }
 
 static void close_fd_pair(fd_pair_t pair)
