@@ -12,39 +12,45 @@
 #include <termios.h>
 #include <fcntl.h>
 #include <pwd.h>
+#include <dirent.h>
+
 #include <limits.h>
 #include <stdalign.h>
 #include <stdio.h>
 
 #define MIN(a_, b_) ((a_) < (b_) ? (a_) : (b_))
 #define MAX(a_, b_) ((a_) > (b_) ? (a_) : (b_))
+#define ALIGN_UP(n_, align_) ((((n_) - 1) / (align_) + 1) * (align_))
 
 // @TODO (all): (smoke)tests
 
 // @TODO: handle allocation failures somehow
 
-static inline void mem_set(u8 *mem, u64 sz)
+static inline void mem_clear(void *mem, u64 sz)
 {
-    for (u8 *end = mem + sz; mem != end; ++mem)
-        *mem = 0;
+    u8 *p = (u8 *)mem;
+    for (u8 *end = p + sz; p != end; ++p)
+        *p = 0;
 }
 
-static inline void mem_cpy(u8 *to, u8 *from, u64 sz)
+static inline void mem_cpy(void *to, void *from, u64 sz)
 {
-    for (u8 *end = to + sz; to != end; ++to, ++from)
-        *to = *from;
+    u8 *pt = (u8 *)to, *pf = (u8 *)from;
+    for (u8 *end = pt + sz; pt != end; ++pt, ++pf)
+        *pt = *pf;
 }
 
-static inline void mem_cpy_bw(u8 *to, u8 *from, u64 sz)
+static inline void mem_cpy_bw(void *to, void *from, u64 sz)
 {
-    for (u8 *from_end = from + sz - 1, *to_end = to + sz - 1;
-        to_end != to - 1; --from_end, --to_end)
+    u8 *pt = (u8 *)to, *pf = (u8 *)from;
+    for (u8 *from_end = pf + sz - 1, *to_end = pt + sz - 1;
+        to_end != pt - 1; --from_end, --to_end)
     {
         *to_end = *from_end;
     }
 }
 
-#define CLEAR(addr_) mem_set((u8 *)(addr_), sizeof(*(addr_)))
+#define CLEAR(addr_) mem_clear((addr_), sizeof(*(addr_)))
 
 typedef struct arena_tag {
     buffer_t buf;
@@ -66,8 +72,7 @@ static u8 *arena_allocate_aligned(arena_t *arena, u64 bytes, u64 alignment)
     // malloc alignment must be enough (since arena itself is mallocd)
     ASSERT(alignment <= 16 && 16 % alignment == 0);
     ASSERT(buffer_is_valid(&arena->buf));
-    u64 const required_start =
-        (arena->allocated + alignment - 1) & ~(alignment - 1);
+    u64 const required_start = ALIGN_UP(arena->allocated, alignment);
 
     if (required_start + bytes > arena->buf.sz)
         return NULL;
@@ -115,19 +120,156 @@ static inline b32 is_ws_or_sep(int c)
     return is_whitespace(c) || is_separator_char(c);
 }
 
-typedef struct terminal_input_tag {
-    struct termios backup_ts;
-    struct winsize wsz; // @NOTE: does not support resize while editing one line
-    char input_buf[64];
-    u32 buffered_chars_cnt;
-} terminal_input_t;
-
-static void init_term(terminal_input_t *term)
+static string_t get_token_postfix(string_t s)
 {
-    tcgetattr(STDIN_FILENO, &term->backup_ts);
+    string_t pf = {s.p + s.len, 0};
+    while (pf.p > s.p && !is_ws_or_sep(pf.p[-1])) {
+        --pf.p;
+        ++pf.len;
+    }
+    return pf;
 }
 
-static void shutdown_term(terminal_input_t *term, bool drain)
+typedef struct split_path_tag {
+    string_t dir;
+    string_t file;
+} split_path_t;
+
+static split_path_t split_path(string_t path)
+{
+    split_path_t res = {};
+    if (path.len == 0)
+        return res;
+    res.file.p = path.p + path.len;
+    while (res.file.p > path.p && res.file.p[-1] != '/') {
+        --res.file.p;
+        ++res.file.len;
+    }
+    if (res.file.p != path.p) {
+        res.dir.p = path.p;
+        res.dir.len = res.file.p - path.p - 1;
+    }
+    return res;
+}
+
+static bool path_has_dir(split_path_t const *path)
+{
+    return !string_is_empty(&path->dir);
+}
+
+typedef struct fslist_tag {
+    string_t *entries;
+    u32 cnt;
+} fslist_t;
+
+static bool iterate_fslist(
+    fslist_t const *list, bool (*cb)(string_t, void *), void *user)
+{
+    u32 cnt = list->cnt;
+    string_t const *s = list->entries;
+    while (cnt--) {
+        if (!cb(*s, user))
+            return false;
+        s = (string_t *)((u8 *)s +
+            ALIGN_UP(sizeof(string_t) + s->len + 1, _Alignof(string_t)));
+    }
+    return true;
+}
+
+static bool fslist_elem_is_not_eq(string_t elem, void *user)
+{
+    string_t *needle = (string_t *)user;
+    return !str_eq(elem, *needle);
+}
+
+typedef struct search_autocomplete_in_dir_args_tag {
+    string_t prefix;
+    fslist_t *out;
+    arena_t *arena;
+} search_autocomplete_in_dir_args_t; 
+static bool search_autocomplete_in_dir(string_t dir, void *user)
+{
+    search_autocomplete_in_dir_args_t *args =
+        (search_autocomplete_in_dir_args_t *)user;
+    char *dir_cstr = ARENA_ALLOC_N(args->arena, char, dir.len + 1);
+    mem_cpy(dir_cstr, dir.p, dir.len);
+    dir_cstr[dir.len] = '\0';
+    DIR *desc = opendir(dir_cstr);
+    args->arena->allocated -= dir.len + 1;
+    if (!desc)
+        return true;
+    struct dirent *dent;
+    while ((dent = readdir(desc)) != NULL) {
+        string_t dname = str_from_cstr(dent->d_name);
+        if (str_is_prefix_of(args->prefix, dname)) {
+            // If already contained, don't add
+            if (!iterate_fslist(args->out, fslist_elem_is_not_eq, &dname))
+                continue;
+
+            string_t *s = ARENA_ALLOC(args->arena, string_t); 
+            s->p = ARENA_ALLOC_N(args->arena, char, dname.len + 1);
+            s->len = dname.len;
+            mem_cpy(s->p, dname.p, s->len);
+            s->p[s->len] = '\0';
+            ++args->out->cnt;
+            if (!args->out->entries)
+                args->out->entries = s;
+        }
+    }
+    return true;
+}
+
+// @TODO: check if token is first before true sep/start.
+// If not so, don't use path.
+static fslist_t search_autocomplete(
+    string_t prefix, fslist_t const *path, arena_t *arena)
+{
+    fslist_t res = {};
+    split_path_t pref_path = split_path(prefix);
+    search_autocomplete_in_dir_args_t args = {pref_path.file, &res, arena};
+    if (path_has_dir(&pref_path))
+        search_autocomplete_in_dir(pref_path.dir, &args);
+    else
+        iterate_fslist(path, search_autocomplete_in_dir, &args);
+    return res;
+}
+
+typedef struct terminal_session_tag {
+    struct termios backup_ts;
+    struct winsize wsz; // @NOTE: does not support resize while editing one line
+
+    char input_buf[64];
+    u32 buffered_chars_cnt;
+
+    fslist_t path;
+
+    arena_t *tmpmem;
+    arena_t *persmem;
+} terminal_session_t;
+
+static void init_term(terminal_session_t *term)
+{
+    tcgetattr(STDIN_FILENO, &term->backup_ts);
+    char *path = getenv("PATH");
+    if (path) {
+        while (*path) {
+            string_t *s = ARENA_ALLOC(term->persmem, string_t);
+            if ((term->path.cnt++) == 0)
+                term->path.entries = s;
+            s->p = ARENA_ALLOC_N(term->persmem, char, 0);
+            while (*path && *path != ':') {
+                s->p[s->len++] = *path++;
+                (void)ARENA_ALLOC(term->persmem, char);
+            }
+            s->p[s->len] = '\0';
+            (void)ARENA_ALLOC(term->persmem, char);
+            if (*path)
+                ++path;
+        }
+    }
+}
+
+static void shutdown_term(terminal_session_t *term, bool drain)
 {
     if (drain) {
         int chars_read;
@@ -140,10 +282,10 @@ static void shutdown_term(terminal_input_t *term, bool drain)
     tcsetattr(STDIN_FILENO, TCSANOW, &term->backup_ts);
 }
 
-static void start_terminal_editing(terminal_input_t *term)
+static void start_terminal_editing(terminal_session_t *term)
 {
     struct termios ts;
-    mem_cpy((u8 *)&ts, (u8 *)&term->backup_ts, sizeof(struct termios));    
+    mem_cpy(&ts, &term->backup_ts, sizeof(struct termios));    
 
     ts.c_lflag &= ~(ICANON | IEXTEN | ISIG | ECHO);
     ts.c_cc[VMIN] = 1;
@@ -155,12 +297,13 @@ static void start_terminal_editing(terminal_input_t *term)
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &term->wsz);
 }
 
-static void finish_terminal_editing(terminal_input_t *term)
+static void finish_terminal_editing(terminal_session_t *term)
 {
     tcsetattr(STDIN_FILENO, TCSANOW, &term->backup_ts);
+    arena_drop(term->tmpmem);
 }
 
-static void move_cursor_to_pos(int from, int to, terminal_input_t const *term)
+static void move_cursor_to_pos(int from, int to, terminal_session_t const *term)
 {
     int from_lines = from / term->wsz.ws_col;
     int from_chars = from % term->wsz.ws_col;
@@ -183,12 +326,59 @@ static void move_cursor_to_pos(int from, int to, terminal_input_t const *term)
     }
 }
 
-// @TODO (line):
-// Autocomplete: search fs
-// Autocomplete: for first word w/out slashes look in PATH instead
+typedef struct print_autocomplete_opt_args_tag {
+    int *pos;
+    int max_rows;
+    terminal_session_t const *term;
+    int col_alignment;
+} print_autocomplete_opt_args_t;
+static bool print_autocomplete_opt(string_t opt, void *user)
+{
+    print_autocomplete_opt_args_t *args = (print_autocomplete_opt_args_t *)user; 
+
+    int w = args->term->wsz.ws_col;
+    int max_rows = args->max_rows;
+
+    int start_chars = *args->pos % w;
+    int start_row = *args->pos / w;
+
+    if (start_row > max_rows || (start_row == max_rows && start_chars > 0))
+        return true;
+
+    int aligned_chars = start_chars == 0 ?
+        start_chars : ALIGN_UP(start_chars, args->col_alignment);
+
+    if (aligned_chars + MAX(opt.len, args->col_alignment) > w) {
+        for (int i = start_chars; i < w; ++i)
+            putchar(' ');
+        putchar('\n');
+        *args->pos += w - start_chars;
+
+        start_chars = 0;
+        aligned_chars = 0;
+        ++start_row;
+    }
+    for (int i = start_chars; i < aligned_chars; ++i)
+        putchar(' ');
+    *args->pos += aligned_chars - start_chars;
+
+    // @TODO: not full path
+    if (start_row < max_rows) {
+        while (opt.len >= w) {
+            string_t subs = {opt.p, w};
+            printf("%.*s\n", STR_PRINTF_ARGS(subs));
+            opt.p += w;
+            opt.len -= w;
+        }
+        printf("%.*s", STR_PRINTF_ARGS(opt));
+        *args->pos += opt.len;
+    } else
+        *args->pos += printf("...");
+    return true;
+}
 
 static int read_line_from_terminal(
-    buffer_t *buf, string_t *out_string, terminal_input_t *term)
+    buffer_t *buf, string_t *out_string, terminal_session_t *term)
 {
     start_terminal_editing(term);
 
@@ -203,19 +393,21 @@ static int read_line_from_terminal(
     string_t s = {buf->p, 0};
     int epos = 0;
 
-    bool done = false;
-
     enum {
         e_st_dfl,
         e_st_parsed_esc,
         e_st_ready_for_arrow
     } state = e_st_dfl;
 
+    bool done = false;
+    int prev_len = 0;
+
     while (!done) {
         char *p;
         int chars_consumed;
-        int prev_len = s.len;
         int prev_epos = epos;
+
+        fslist_t autocompletes = {};
 
         if (!term->buffered_chars_cnt) {
             term->buffered_chars_cnt =
@@ -290,38 +482,42 @@ static int read_line_from_terminal(
                 }
                 if (epos < s.len) {
                     mem_cpy(
-                        (u8 *)(s.p + epos - chars_to_delete),
-                        (u8 *)(s.p + epos),
+                        s.p + epos - chars_to_delete,
+                        s.p + epos,
                         s.len - epos);
                 }
                 epos -= chars_to_delete;
                 s.len -= chars_to_delete;
             } break;
-            case '\t':
-                // @TODO: if in token, look up
-                if (s.len < buf->sz - 1) {
-                    int chars_to_put = MIN(4, buf->sz - 1 - s.len);
-                    if (epos < s.len) {
-                        mem_cpy_bw(
-                            (u8 *)(s.p + epos + chars_to_put),
-                            (u8 *)(s.p + epos),
-                            s.len - epos);
-                    }
-                    s.len += chars_to_put;
-                    for (; chars_to_put; --chars_to_put)
-                        s.p[epos++] = ' ';
+            case '\t': {
+                string_t curs = {s.p, epos};
+                string_t tok = get_token_postfix(curs);
+                autocompletes =
+                    search_autocomplete(tok, &term->path, term->tmpmem);
+                if (autocompletes.cnt == 1 &&
+                    autocompletes.entries[0].len + epos < buf->sz)
+                {
+                    split_path_t path = split_path(autocompletes.entries[0]);
+                    split_path_t split_tok = split_path(tok);
+                    string_t inserted = {
+                        path.file.p + split_tok.file.len,
+                        path.file.len - split_tok.file.len
+                    };
+                    mem_cpy_bw(
+                        s.p + epos + inserted.len, s.p + epos, inserted.len);
+                    mem_cpy(s.p + epos, inserted.p, inserted.len);
+                    epos += inserted.len;
+                    s.len += inserted.len;
+                    CLEAR(&autocompletes);
                 }
-                break;
+            } break;
 
             default:
                 if (*p < 32) // no control characters
                     break;
                 if (s.len < buf->sz - 1) {
-                    if (epos < s.len) {
-                        mem_cpy_bw(
-                            (u8 *)(s.p + epos + 1), (u8 *)(s.p + epos),
-                            s.len - epos);
-                    }
+                    if (epos < s.len)
+                        mem_cpy_bw(s.p + epos + 1, s.p + epos, s.len - epos);
                     s.p[epos++] = *p;
                     ++s.len;
                 }
@@ -334,7 +530,7 @@ static int read_line_from_terminal(
         chars_consumed = p - term->input_buf;
         term->buffered_chars_cnt -= chars_consumed;
         if (chars_consumed < term->buffered_chars_cnt)
-            mem_cpy((u8 *)term->input_buf, (u8 *)p, term->buffered_chars_cnt);
+            mem_cpy(term->input_buf, p, term->buffered_chars_cnt);
 
         move_cursor_to_pos(prev_epos + 2, 0, term);
         int chars_printed = printf("> ");
@@ -343,11 +539,32 @@ static int read_line_from_terminal(
             if ((++chars_printed) % term->wsz.ws_col == 0)
                 putchar('\n');
         }
-        if (epos < MAX(s.len, prev_len))
-            move_cursor_to_pos(MAX(s.len, prev_len) + 2, epos + 2, term);
+
+        int curspos = MAX(s.len, prev_len) + 2;
+        if (autocompletes.cnt > 0 && !done) {
+            move_cursor_to_pos(curspos, s.len + 2, term);
+            curspos = s.len + 2;
+            int linebreak = ALIGN_UP(curspos, term->wsz.ws_col);
+            for (; curspos < linebreak; ++curspos)
+                putchar(' ');
+            putchar('\n');
+            curspos = linebreak;
+
+            print_autocomplete_opt_args_t args =
+                {&curspos, 8, term, MAX(term->wsz.ws_col / 6, 16)};
+            iterate_fslist(&autocompletes, print_autocomplete_opt, &args);
+            prev_len = curspos - 2;
+        } else
+            prev_len = s.len;
+
+        if (epos + 2 < curspos)
+            move_cursor_to_pos(curspos, epos + 2, term);
         if (done)
             putchar('\n');
+
         fflush(stdout);
+
+        arena_drop(term->tmpmem);
     }
 
 func_end:
@@ -752,9 +969,9 @@ static b32 command_is_cd(command_node_t const *cmd)
 }
 
 enum {
-    c_not_cd,
-    c_is_cd,
-    c_invalid_cd,
+    c_not_cd = 0,
+    c_is_cd = 1,
+    c_invalid_cd = 2,
 };
 
 // cd can not be part of a pipe, must have 0 or 1 args & cant have io redir
@@ -877,7 +1094,7 @@ static token_t parse_runnable(
             default: 
             }
         } else {
-            assert(tok.type == e_tt_lparen);
+            ASSERT(tok.type == e_tt_lparen);
             if (state != e_st_init) {
                 tok.type = e_tt_error; // @TODO: elaborate
                 break; 
@@ -1327,33 +1544,48 @@ int main()
 {
     enum {
         c_program_mem_size = 1024 * 1024,
-        c_line_buf_size = 1024,
-        c_parser_mem_size = (c_program_mem_size / 2) - c_line_buf_size,
-        c_interpreter_mem_size = c_program_mem_size / 2
+
+        c_persistent_mem_size = c_program_mem_size / 4,
+        c_line_mem_size = c_program_mem_size / 2,
+        c_temp_mem_size = c_program_mem_size / 4,
+
+        c_line_buf_size = 1024
     };
 
     int res = 0;
 
     buffer_t memory = allocate_buffer(c_program_mem_size);
-    buffer_t line_storage = {memory.p, c_line_buf_size};
-    arena_t parser_arena = {{memory.p + c_line_buf_size, c_parser_mem_size}};
-    arena_t inerpreter_arena = {{
-        memory.p + c_line_buf_size + c_parser_mem_size,
-        c_interpreter_mem_size
+    arena_t persistent_arena = {{
+        memory.p,
+        c_persistent_mem_size
+    }};
+    arena_t line_arena = {{
+        memory.p + c_persistent_mem_size,
+        c_line_mem_size
+    }};
+    arena_t temp_arena = {{
+        memory.p + c_persistent_mem_size + c_line_mem_size,
+        c_temp_mem_size
     }};
 
     int const is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
-    terminal_input_t term = {};
+    terminal_session_t term = {};
 
-    int read_res;
-
-    if (is_term)
+    if (is_term) {
+        term.persmem = &persistent_arena;
+        term.tmpmem = &temp_arena;
         init_term(&term);
+    }
 
     signal(SIGCHLD, sigchld_handler);
 
+    int read_res;
 
     for (;;) {
+        buffer_t line_storage = {
+            ARENA_ALLOC_N(&line_arena, char, c_line_buf_size),
+            c_line_buf_size
+        };
         string_t line = {};
 
         if (is_term)
@@ -1373,19 +1605,18 @@ int main()
         else if (line.len == 0)
             goto loop_end;
 
-        root_node_t *ast_root = parse_line(line, &parser_arena);
+        root_node_t *ast_root = parse_line(line, &line_arena);
         if (!ast_root)
             goto loop_end;
 
         print_uncond_chain(ast_root, 0);
 
-        int retcode = execute_line(ast_root, is_term, &inerpreter_arena);
+        int retcode = execute_line(ast_root, is_term, &line_arena);
         if (retcode != 0)
             fprintf(stderr, "Interpreter error: failed w/ code %d\n", retcode);
 
     loop_end:
-        arena_drop(&parser_arena);
-        arena_drop(&inerpreter_arena);
+        arena_drop(&line_arena);
     }
 
     pid_t awaited;

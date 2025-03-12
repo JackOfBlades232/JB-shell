@@ -45,4 +45,34 @@ static inline bool str_eq(string_t s1, string_t s2)
     return true;
 }
 
+static inline bool str_is_prefix_of(string_t prefix, string_t of)
+{
+    if (prefix.len > of.len)
+        return false;
+    for (char *p = prefix.p, *o = of.p; p != prefix.p + prefix.len; ++p, ++o) {
+        if (*p != *o)
+            return false;
+    }
+    return true;
+}
+
+static inline bool str_has_chr(string_t s, char c)
+{
+    for (char *p = s.p; p != s.p + s.len; ++p) {
+        if (*p == c)
+            return true;
+    }
+    return false;
+}
+
+static inline string_t str_from_cstr(char *cstr)
+{
+    string_t res = {cstr};
+    if (cstr) {
+        while (*cstr++)
+            ++res.len;
+    }
+    return res;
+}
+
 #endif
