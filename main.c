@@ -57,16 +57,6 @@ typedef struct arena_tag {
     u64 allocated;
 } arena_t;
 
-static u8 *arena_allocate(arena_t *arena, u64 bytes)
-{
-    ASSERT(buffer_is_valid(&arena->buf));
-    if (arena->allocated + bytes > arena->buf.sz)
-        return NULL;
-    u8 *ptr = (u8 *)arena->buf.p + arena->allocated;
-    arena->allocated += bytes;
-    return ptr;
-}
-
 static u8 *arena_allocate_aligned(arena_t *arena, u64 bytes, u64 alignment)
 { 
     // malloc alignment must be enough (since arena itself is mallocd)
@@ -100,19 +90,19 @@ enum {
 
 static inline b32 is_eol(int c)
 {
-    return c == '\n' || c == EOF;
+    return (c == '\n') | (c == EOF);
 }
 
 static inline b32 is_whitespace(int c)
 {
-    return c == ' ' || c == '\t' || c == '\r';
+    return (c == ' ') | (c == '\t') | (c == '\r');
 }
 
 static inline b32 is_separator_char(int c)
 {
     return
-        c == '|' || c == '&' || c == '>' || c == '<' ||
-        c == ';' || c == ')' || c == '(';
+        (c == '|') | (c == '&') | (c == '>') | (c == '<') |
+        (c == ';') | (c == ')') | (c == '(');
 }
 
 static inline b32 is_ws_or_sep(int c)
@@ -120,13 +110,17 @@ static inline b32 is_ws_or_sep(int c)
     return is_whitespace(c) || is_separator_char(c);
 }
 
-static string_t get_token_postfix(string_t s)
+static string_t get_token_postfix(string_t s, b32 *is_first)
 {
     string_t pf = {s.p + s.len, 0};
     while (pf.p > s.p && !is_ws_or_sep(pf.p[-1])) {
         --pf.p;
         ++pf.len;
     }
+    char const *p = pf.p - 1;
+    while (p >= s.p && is_whitespace(*p))
+        --p;
+    *is_first = p < s.p || is_separator_char(*p);
     return pf;
 }
 
@@ -152,7 +146,7 @@ static split_path_t split_path(string_t path)
     return res;
 }
 
-static bool path_has_dir(split_path_t const *path)
+static b32 path_has_dir(split_path_t const *path)
 {
     return !string_is_empty(&path->dir);
 }
@@ -162,8 +156,8 @@ typedef struct fslist_tag {
     u32 cnt;
 } fslist_t;
 
-static bool iterate_fslist(
-    fslist_t const *list, bool (*cb)(string_t, void *), void *user)
+static b32 iterate_fslist(
+    fslist_t const *list, b32 (*cb)(string_t, void *), void *user)
 {
     u32 cnt = list->cnt;
     string_t const *s = list->entries;
@@ -176,7 +170,7 @@ static bool iterate_fslist(
     return true;
 }
 
-static bool fslist_elem_is_not_eq(string_t elem, void *user)
+static b32 fslist_elem_is_not_eq(string_t elem, void *user)
 {
     string_t *needle = (string_t *)user;
     return !str_eq(elem, *needle);
@@ -187,7 +181,7 @@ typedef struct search_autocomplete_in_dir_args_tag {
     fslist_t *out;
     arena_t *arena;
 } search_autocomplete_in_dir_args_t; 
-static bool search_autocomplete_in_dir(string_t dir, void *user)
+static b32 search_autocomplete_in_dir(string_t dir, void *user)
 {
     search_autocomplete_in_dir_args_t *args =
         (search_autocomplete_in_dir_args_t *)user;
@@ -219,8 +213,6 @@ static bool search_autocomplete_in_dir(string_t dir, void *user)
     return true;
 }
 
-// @TODO: check if token is first before true sep/start.
-// If not so, don't use path.
 static fslist_t search_autocomplete(
     string_t prefix, fslist_t const *path, arena_t *arena)
 {
@@ -229,8 +221,12 @@ static fslist_t search_autocomplete(
     search_autocomplete_in_dir_args_t args = {pref_path.file, &res, arena};
     if (path_has_dir(&pref_path))
         search_autocomplete_in_dir(pref_path.dir, &args);
-    else
+    else if (path)
         iterate_fslist(path, search_autocomplete_in_dir, &args);
+    else {
+        string_t cwd = LITSTR(".");
+        search_autocomplete_in_dir(cwd, &args);
+    }
     return res;
 }
 
@@ -269,7 +265,7 @@ static void init_term(terminal_session_t *term)
     }
 }
 
-static void shutdown_term(terminal_session_t *term, bool drain)
+static void shutdown_term(terminal_session_t *term, b32 drain)
 {
     if (drain) {
         int chars_read;
@@ -332,7 +328,7 @@ typedef struct print_autocomplete_opt_args_tag {
     terminal_session_t const *term;
     int col_alignment;
 } print_autocomplete_opt_args_t;
-static bool print_autocomplete_opt(string_t opt, void *user)
+static b32 print_autocomplete_opt(string_t opt, void *user)
 {
     print_autocomplete_opt_args_t *args = (print_autocomplete_opt_args_t *)user; 
 
@@ -362,7 +358,6 @@ static bool print_autocomplete_opt(string_t opt, void *user)
         putchar(' ');
     *args->pos += aligned_chars - start_chars;
 
-    // @TODO: not full path
     if (start_row < max_rows) {
         while (opt.len >= w) {
             string_t subs = {opt.p, w};
@@ -399,7 +394,7 @@ static int read_line_from_terminal(
         e_st_ready_for_arrow
     } state = e_st_dfl;
 
-    bool done = false;
+    b32 done = false;
     int prev_len = 0;
 
     while (!done) {
@@ -465,7 +460,7 @@ static int read_line_from_terminal(
                 if (epos == 0)
                     break;
                 if (*p == 23) {
-                    bool skipping_ws = true;
+                    b32 skipping_ws = true;
                     chars_to_delete = 0;
                     while (chars_to_delete < epos &&
                         (!is_ws_or_sep(s.p[epos - chars_to_delete - 1]) ||
@@ -491,9 +486,10 @@ static int read_line_from_terminal(
             } break;
             case '\t': {
                 string_t curs = {s.p, epos};
-                string_t tok = get_token_postfix(curs);
-                autocompletes =
-                    search_autocomplete(tok, &term->path, term->tmpmem);
+                b32 is_first = false;
+                string_t tok = get_token_postfix(curs, &is_first);
+                autocompletes = search_autocomplete(
+                    tok, is_first ? &term->path : NULL, term->tmpmem);
                 if (autocompletes.cnt == 1 &&
                     autocompletes.entries[0].len + epos < buf->sz)
                 {
@@ -728,7 +724,7 @@ static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
             }
 
             if (!string_is_valid(&tok.id))
-                tok.id.p = (char *)arena_allocate(symbols_arena, 0);
+                tok.id.p = ARENA_ALLOC_N(symbols_arena, char, 0);
 
             ASSERT(tok.id.p + tok.id.len - symbols_arena->buf.p <
                    symbols_arena->buf.sz);
@@ -827,7 +823,6 @@ typedef struct pipe_chain_node_tag {
     string_t stdin_redir;
     string_t stdout_redir;
     string_t stdout_append_redir;
-    // @TODO: compress/alias?
 
     b32 is_cd;
 } pipe_chain_node_t;
@@ -1510,7 +1505,7 @@ static int execute_uncond_chain(uncond_chain_node_t const *chain,
     return execute_cond_chain(cond, arena);
 }
 
-static int execute_line(root_node_t const *ast, bool is_term, arena_t *arena)
+static int execute_line(root_node_t const *ast, b32 is_term, arena_t *arena)
 {
     pid_t pid = fork();
     if (pid == 0) {
