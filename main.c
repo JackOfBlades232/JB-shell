@@ -1001,6 +1001,17 @@ static int check_if_pipe_is_cd(pipe_chain_node_t const *pp)
     return c_is_cd;
 }
 
+// Check if whole command is cd -- so that we can not fork
+static int check_if_command_is_cd(root_node_t const *root)
+{
+    if (root->uncond_cnt > 0)
+        return c_not_cd;
+    cond_chain_node_t const *cond = &root->first;
+    if (cond->cond_cnt > 0)
+        return c_not_cd;
+    return check_if_pipe_is_cd(&cond->first);
+}
+
 static token_t parse_uncond_chain(lexer_t *, uncond_chain_node_t *, arena_t *);
 
 static token_t parse_runnable(
@@ -1508,6 +1519,12 @@ static int execute_uncond_chain(uncond_chain_node_t const *chain,
 
 static int execute_line(root_node_t const *ast, b32 is_term, arena_t *arena)
 {
+    int cd_res = check_if_command_is_cd(ast);
+    if (cd_res == c_invalid_cd)
+        return -1; // @TODO: elaborate
+    else if (cd_res == c_is_cd)
+        return execute_pipe_chain(&ast->first.first, arena);
+
     pid_t pid = fork();
     if (pid == 0) {
         detach_group();
