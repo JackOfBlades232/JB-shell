@@ -22,9 +22,12 @@
 #define MAX(a_, b_) ((a_) > (b_) ? (a_) : (b_))
 #define ALIGN_UP(n_, align_) ((((n_) - 1) / (align_) + 1) * (align_))
 
+#define LIKELY(x_) __builtin_expect(!!(x_), 1)
+#define UNLIKELY(x_) __builtin_expect(!!(x_), 0)
+
 // @TODO (all): (smoke)tests
 
-// @TODO: handle allocation failures somehow
+// @TODO: mem stats
 
 static inline void mem_clear(void *mem, u64 sz)
 {
@@ -64,8 +67,10 @@ static u8 *arena_allocate_aligned(arena_t *arena, u64 bytes, u64 alignment)
     ASSERT(buffer_is_valid(&arena->buf));
     u64 const required_start = ALIGN_UP(arena->allocated, alignment);
 
-    if (required_start + bytes > arena->buf.sz)
-        return NULL;
+    if (UNLIKELY(required_start + bytes > arena->buf.sz)) {
+        fprintf(stderr, "OOM, check your assumptions!\n");
+        exit(-1);
+    }
     u8 *ptr = (u8 *)arena->buf.p + required_start;
     arena->allocated = required_start + bytes;
     return ptr;
@@ -324,8 +329,8 @@ static void move_cursor_to_pos(int from, int to, terminal_session_t const *term)
 
 typedef struct print_autocomplete_opt_args_tag {
     int *pos;
-    int max_rows;
     terminal_session_t const *term;
+    int max_rows;
     int col_alignment;
 } print_autocomplete_opt_args_t;
 static b32 print_autocomplete_opt(string_t opt, void *user)
@@ -359,6 +364,7 @@ static b32 print_autocomplete_opt(string_t opt, void *user)
     *args->pos += aligned_chars - start_chars;
 
     if (start_row < max_rows) {
+        *args->pos += opt.len;
         while (opt.len >= w) {
             string_t subs = {opt.p, w};
             printf("%.*s\n", STR_PRINTF_ARGS(subs));
@@ -366,7 +372,6 @@ static b32 print_autocomplete_opt(string_t opt, void *user)
             opt.len -= w;
         }
         printf("%.*s", STR_PRINTF_ARGS(opt));
-        *args->pos += opt.len;
     } else
         *args->pos += printf("...");
     return true;
@@ -547,7 +552,7 @@ static int read_line_from_terminal(
             curspos = linebreak;
 
             print_autocomplete_opt_args_t args =
-                {&curspos, 8, term, MAX(term->wsz.ws_col / 6, 16)};
+                {&curspos, term, 8, MAX(term->wsz.ws_col / 6, 16)};
             iterate_fslist(&autocompletes, print_autocomplete_opt, &args);
             prev_len = curspos - 2;
         } else
@@ -636,7 +641,7 @@ static inline void lexer_consume(lexer_t *lexer)
     ++lexer->pos;
 }
 
-static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
+static token_t get_next_token(lexer_t *lexer, arena_t *arena)
 {
     token_t tok = {};
 
@@ -713,6 +718,9 @@ static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
 
             lexer_consume(lexer);
 
+            if (!string_is_valid(&tok.id))
+                tok.id.p = ARENA_ALLOC_N(arena, char, 0);
+
             if (c == '\\' && !screen_next) {
                 screen_next = true;
                 continue;
@@ -723,15 +731,8 @@ static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
                 continue;
             }
 
-            if (!string_is_valid(&tok.id))
-                tok.id.p = ARENA_ALLOC_N(symbols_arena, char, 0);
-
-            ASSERT(tok.id.p + tok.id.len - symbols_arena->buf.p <
-                   symbols_arena->buf.sz);
-
-            ++symbols_arena->allocated;
-            
             ASSERT(c >= SCHAR_MIN && c <= SCHAR_MAX);
+            (void)ARENA_ALLOC(arena, char);
             tok.id.p[tok.id.len++] = (char)c;
 
             screen_next = false;
@@ -747,7 +748,7 @@ static token_t get_next_token(lexer_t *lexer, arena_t *symbols_arena)
         tok.type = e_tt_eol;
     else {
         // To make linux syscalls happy
-        ++symbols_arena->allocated;
+        (void)ARENA_ALLOC(arena, char);
         tok.id.p[tok.id.len] = '\0';
 
         tok.type = e_tt_ident;
@@ -1535,7 +1536,7 @@ static int execute_line(root_node_t const *ast, b32 is_term, arena_t *arena)
     return res;
 }
 
-int main()
+int main(int argc, char **argv)
 {
     enum {
         c_program_mem_size = 1024 * 1024,
@@ -1546,6 +1547,30 @@ int main()
 
         c_line_buf_size = 1024
     };
+
+    b32 execute = true;
+    b32 print_ast = false;
+    b32 disable_term = false;
+
+    string_t const only_parse_arg = LITSTR("--parser-only");
+    string_t const print_ast_arg = LITSTR("--print-ast");
+    string_t const disable_term_arg = LITSTR("--no-term-input");
+
+    for (int i = 1; i < argc; ++i) {
+        string_t arg = str_from_cstr(argv[i]);
+
+        if (str_eq(arg, only_parse_arg)) {
+            execute = false;
+            print_ast = true;
+        } else if (str_eq(arg, print_ast_arg)) {
+            print_ast = true;
+        } else if (str_eq(arg, disable_term_arg)) {
+            disable_term = true;
+        } else {
+            fprintf(stderr, "Invalid arg: %s\n", argv[i]);
+            return 1;
+        }
+    }
 
     int res = 0;
 
@@ -1563,7 +1588,8 @@ int main()
         c_temp_mem_size
     }};
 
-    int const is_term = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
+    b32 const is_term =
+        isatty(STDIN_FILENO) && isatty(STDOUT_FILENO) && !disable_term;
     terminal_session_t term = {};
 
     if (is_term) {
@@ -1604,11 +1630,16 @@ int main()
         if (!ast_root)
             goto loop_end;
 
-        print_uncond_chain(ast_root, 0);
+        if (print_ast)
+            print_uncond_chain(ast_root, 0);
 
-        int retcode = execute_line(ast_root, is_term, &line_arena);
-        if (retcode != 0)
-            fprintf(stderr, "Interpreter error: failed w/ code %d\n", retcode);
+        if (execute) {
+            int retcode = execute_line(ast_root, is_term, &line_arena);
+            if (retcode != 0) {
+                fprintf(stderr,
+                    "Interpreter error: failed w/ code %d\n", retcode);
+            }
+        }
 
     loop_end:
         arena_drop(&line_arena);
