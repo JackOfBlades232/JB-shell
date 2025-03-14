@@ -1001,17 +1001,6 @@ static int check_if_pipe_is_cd(pipe_chain_node_t const *pp)
     return c_is_cd;
 }
 
-// Check if whole command is cd -- so that we can not fork
-static int check_if_command_is_cd(root_node_t const *root)
-{
-    if (root->uncond_cnt > 0)
-        return c_not_cd;
-    cond_chain_node_t const *cond = &root->first;
-    if (cond->cond_cnt > 0)
-        return c_not_cd;
-    return check_if_pipe_is_cd(&cond->first);
-}
-
 static token_t parse_uncond_chain(lexer_t *, uncond_chain_node_t *, arena_t *);
 
 static token_t parse_runnable(
@@ -1358,7 +1347,7 @@ static void close_fd_pairs(fd_pair_t *pairs, int count)
         close_fd_pair(*p);
 }
 
-static int execute_uncond_chain(uncond_chain_node_t const *, arena_t *);
+static int execute_uncond_chain(uncond_chain_node_t const *, b32, arena_t *);
 
 static pid_t execute_runnable(
     runnable_node_t const *runnable,
@@ -1389,7 +1378,7 @@ static pid_t execute_runnable(
             perror(argv[0]);
             _exit(1);
         } else {
-            _exit(execute_uncond_chain(runnable->subshell, arena));
+            _exit(execute_uncond_chain(runnable->subshell, false, arena));
         }
     }
 
@@ -1397,23 +1386,9 @@ static pid_t execute_runnable(
     return pid;
 }
 
-static int execute_pipe_chain(pipe_chain_node_t const *pp, arena_t *arena)
+static int execute_pipe_in_subprocess(
+    pipe_chain_node_t const *pp, arena_t *arena)
 {
-    if (pp->is_cd) {
-        command_node_t const *cmd = pp->first.cmd;
-        char const *dir = NULL;
-
-        string_t const homedirstr = LITSTR("~");
-
-        if (cmd->arg_cnt == 0 || str_eq(cmd->args->name, homedirstr)) {
-            if ((dir = getenv("HOME")) == NULL)
-                dir = getpwuid(getuid())->pw_dir;
-        } else
-            dir = cmd->args->name.p;
-
-        return chdir(dir) == 0 ? 0 : 1;
-    }
-
     int elem_cnt = pp->cmd_cnt + 1;
     pid_t *pids = ARENA_ALLOC_N(arena, pid_t, elem_cnt);
     fd_pair_t *io_fd_pairs = ARENA_ALLOC_N(arena, fd_pair_t, elem_cnt);
@@ -1480,11 +1455,51 @@ static int execute_pipe_chain(pipe_chain_node_t const *pp, arena_t *arena)
     return await_processes(pids, launched_proc_cnt);
 }
 
-static int execute_cond_chain(cond_chain_node_t const *chain, arena_t *arena)
+static int execute_pipe_chain(
+    pipe_chain_node_t const *pp, b32 is_term, arena_t *arena)
+{
+    if (pp->is_cd) {
+        command_node_t const *cmd = pp->first.cmd;
+        char const *dir = NULL;
+
+        string_t const homedirstr = LITSTR("~");
+
+        if (cmd->arg_cnt == 0 || str_eq(cmd->args->name, homedirstr)) {
+            if ((dir = getenv("HOME")) == NULL)
+                dir = getpwuid(getuid())->pw_dir;
+        } else
+            dir = cmd->args->name.p;
+
+        return chdir(dir) == 0 ? 0 : 1;
+    }
+
+    signal(SIGCHLD, SIG_DFL);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        detach_group();
+        if (is_term)
+            set_pgroup_as_term_fg();
+
+        _exit(execute_pipe_in_subprocess(pp, arena));
+    } else if (pid == -1) {
+        sigchld_handler(0);
+        return -1;
+    }
+
+    int res = await_processes(&pid, 1);
+
+    if (is_term)
+        set_pgroup_as_term_fg();
+    return res;
+}
+
+static int execute_cond_chain(
+    cond_chain_node_t const *chain, b32 is_term, arena_t *arena)
 {
     pipe_chain_node_t const *pp = &chain->first;
     for (cond_node_t *cond = chain->chain; cond; cond = cond->next) {
-        int res = execute_pipe_chain(pp, arena);
+        int res = execute_pipe_chain(pp, is_term, arena);
 
         if (res == 0 && cond->link == e_cl_if_failed)
             return res;
@@ -1493,11 +1508,11 @@ static int execute_cond_chain(cond_chain_node_t const *chain, arena_t *arena)
 
         pp = &cond->pp;
     }
-    return execute_pipe_chain(pp, arena);
+    return execute_pipe_chain(pp, is_term, arena);
 }
 
-static int execute_uncond_chain(uncond_chain_node_t const *chain,
-                                arena_t *arena)
+static int execute_uncond_chain(
+    uncond_chain_node_t const *chain, b32 is_term, arena_t *arena)
 {
     cond_chain_node_t const *cond = &chain->first;
     for (uncond_node_t *uncond = chain->chain; uncond; uncond = uncond->next) {
@@ -1508,49 +1523,18 @@ static int execute_uncond_chain(uncond_chain_node_t const *chain,
             if (pid == 0) {
                 detach_group();
 
-                _exit(execute_cond_chain(cond, arena));
+                _exit(execute_cond_chain(cond, false, arena));
             }
         } else
-            execute_cond_chain(cond, arena);
+            execute_cond_chain(cond, is_term, arena);
         cond = &uncond->cond;
     }
-    return execute_cond_chain(cond, arena);
+    return execute_cond_chain(cond, is_term, arena);
 }
 
 static int execute_line(root_node_t const *ast, b32 is_term, arena_t *arena)
 {
-    int cd_res = check_if_command_is_cd(ast);
-    if (cd_res == c_invalid_cd)
-        return -1; // @TODO: elaborate
-    else if (cd_res == c_is_cd)
-        return execute_pipe_chain(&ast->first.first, arena);
-
-    pid_t pid = fork();
-    if (pid == 0) {
-        detach_group();
-        if (is_term)
-            set_pgroup_as_term_fg();
-
-        _exit(execute_uncond_chain(ast, arena));
-    }
-
-    signal(SIGCHLD, SIG_DFL);
-
-    int res = -1;
-    if (pid > 0) {
-        int status;
-        int wr = waitpid(-1, &status, 0);
-        ASSERT(wr == pid);
-        if (WIFEXITED(status))
-            res = WEXITSTATUS(status);
-    }
-
-    if (is_term)
-        set_pgroup_as_term_fg();
-
-    sigchld_handler(0);
-
-    return res;
+    return execute_uncond_chain(ast, is_term, arena);
 }
 
 int main(int argc, char **argv)
