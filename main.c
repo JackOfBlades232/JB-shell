@@ -25,9 +25,15 @@
 #define LIKELY(x_) __builtin_expect(!!(x_), 1)
 #define UNLIKELY(x_) __builtin_expect(!!(x_), 0)
 
-// @TODO (all): (smoke)tests
+// @TODO(total):
+// Fix trailing uncond link -- it should work
+// Make a file with test commands
+// Error reporting in the parser
+// Better error reporting in interpreter
+// Tighten assertions
+// ^L
+// Command history (const depth)
 
-// @TODO: mem stats
 
 static inline void mem_clear(void *mem, u64 sz)
 {
@@ -615,7 +621,6 @@ typedef enum token_type_tag {
     e_tt_lparen,     // (
     e_tt_rparen,     // )
 
-    // @TODO: error types
     e_tt_error = -1
 } token_type_t;
 
@@ -780,10 +785,6 @@ static inline b32 tok_is_cond_sep(token_t tok)
 {
     return tok.type == e_tt_and || tok.type == e_tt_or;
 }
-
-// @TODO (parser):
-// proper error reporting
-// tighter validation
 
 struct uncond_chain_node_tag;
 
@@ -956,8 +957,6 @@ static void print_uncond_chain(uncond_chain_node_t const *chain,
     print_cond_chain(cond, children_indentation);
 }
 
-// @TODO: ASSERT called functions return correct type subset token
-
 static b32 command_is_cd(command_node_t const *cmd)
 {
     string_t const cdstr = LITSTR("cd");
@@ -1023,7 +1022,6 @@ static token_t parse_runnable(
     arg_node_t *last_arg = NULL;
 
     while (tok_is_cmd_elem_or_lparen(tok = get_next_token(lexer, arena))) {
-        // @TODO: ASSERT stuff
         if (tok.type == e_tt_in) {
             if (state == e_st_init) {
                 tok.type = e_tt_error; // @TODO: elaborate
@@ -1289,10 +1287,6 @@ static root_node_t *parse_line(string_t line, arena_t *arena)
 
     return node;
 }
-
-// @TODO (Interpreter):
-// proper error reporting, ASSERTs of cmd format
-// test suite
 
 typedef int fd_pair_t[2]; 
 
