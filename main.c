@@ -27,11 +27,13 @@
 
 // @TODO(total):
 // Fix trailing uncond link -- it should work
+// Fix crash on ^C to telnet -- I think telnet should not react at all
 // Make a file with test commands
 // Error reporting in the parser
 // Better error reporting in interpreter
 // Tighten assertions
 // ^L
+// Suggest local directories in first word autocomplete:w
 // Command history (const depth)
 
 
