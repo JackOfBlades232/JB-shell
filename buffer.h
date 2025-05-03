@@ -26,7 +26,7 @@ static inline void clear_buffer(buffer_t *s)
 
 static inline buffer_t allocate_buffer(u64 sz)
 {
-    buffer_t s = {};
+    buffer_t s = {0};
     s.p = malloc(sz + 1);
     s.sz = s.p ? sz : 0;
     return s;

@@ -1,7 +1,7 @@
 SRCMODULES = $(wildcard '*.c')
 OBJMODULES = $(SRCMODULES:.c=.o)
 CC = gcc
-CFLAGS = -g -Wall
+CFLAGS = -g -Wall -Wextra -pedantic -Werror
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) -c $< -o $@

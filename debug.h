@@ -5,6 +5,6 @@
 #include <assert.h>
 
 #define ASSERT(...) assert(__VA_ARGS__)
-#define STATIC_ASSERT(...) _Static_assert(__VA_ARGS__)
+#define STATIC_ASSERT(...) _Static_assert(__VA_ARGS__, "")
 
 #endif

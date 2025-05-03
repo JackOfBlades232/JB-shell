@@ -67,7 +67,7 @@ static inline bool str_has_chr(string_t s, char c)
 
 static inline string_t str_from_cstr(char *cstr)
 {
-    string_t res = {cstr};
+    string_t res = {cstr, 0};
     if (cstr) {
         while (*cstr++)
             ++res.len;

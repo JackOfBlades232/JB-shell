@@ -144,7 +144,7 @@ typedef struct split_path_tag {
 
 static split_path_t split_path(string_t path)
 {
-    split_path_t res = {};
+    split_path_t res = {0};
     if (path.len == 0)
         return res;
     res.file.p = path.p + path.len;
@@ -229,7 +229,7 @@ static b32 search_autocomplete_in_dir(string_t dir, void *user)
 static fslist_t search_autocomplete(
     string_t prefix, fslist_t const *path, arena_t *arena)
 {
-    fslist_t res = {};
+    fslist_t res = {0};
     split_path_t pref_path = split_path(prefix);
     search_autocomplete_in_dir_args_t args = {pref_path.file, &res, arena};
     if (path_has_dir(&pref_path))
@@ -357,7 +357,7 @@ static b32 print_autocomplete_opt(string_t opt, void *user)
     int aligned_chars = start_chars == 0 ?
         start_chars : ALIGN_UP(start_chars, args->col_alignment);
 
-    if (aligned_chars + MAX(opt.len, args->col_alignment) > w) {
+    if (aligned_chars + MAX((int)opt.len, args->col_alignment) > w) {
         for (int i = start_chars; i < w; ++i)
             putchar(' ');
         putchar('\n');
@@ -373,11 +373,11 @@ static b32 print_autocomplete_opt(string_t opt, void *user)
 
     if (start_row < max_rows) {
         *args->pos += opt.len;
-        while (opt.len >= w) {
+        while ((int)opt.len >= w) {
             string_t subs = {opt.p, w};
             printf("%.*s\n", STR_PRINTF_ARGS(subs));
             opt.p += w;
-            opt.len -= w;
+            opt.len -= (u64)w;
         }
         printf("%.*s", STR_PRINTF_ARGS(opt));
     } else
@@ -415,7 +415,7 @@ static int read_line_from_terminal(
         int chars_consumed;
         int prev_epos = epos;
 
-        fslist_t autocompletes = {};
+        fslist_t autocompletes = {0};
 
         if (!term->buffered_chars_cnt) {
             term->buffered_chars_cnt =
@@ -433,7 +433,7 @@ static int read_line_from_terminal(
             if (state == e_st_ready_for_arrow) {
                 switch (*p) {
                 case 67:
-                    if (epos < s.len)
+                    if (epos < (int)s.len)
                         ++epos;
                     state = e_st_dfl;
                     continue;
@@ -443,6 +443,7 @@ static int read_line_from_terminal(
                     state = e_st_dfl;
                     continue;
                 default:
+                    break;
                 }
             }
 
@@ -455,6 +456,7 @@ static int read_line_from_terminal(
                     state = e_st_ready_for_arrow;
                     continue;
                 }
+                // fall through
 
             case 4:
                 res = c_rl_eof;
@@ -488,7 +490,7 @@ static int read_line_from_terminal(
                 } else {
                     chars_to_delete = 1;
                 }
-                if (epos < s.len) {
+                if (epos < (int)s.len) {
                     mem_cpy(
                         s.p + epos - chars_to_delete,
                         s.p + epos,
@@ -525,7 +527,7 @@ static int read_line_from_terminal(
                 if (*p < 32) // no control characters
                     break;
                 if (s.len < buf->sz - 1) {
-                    if (epos < s.len)
+                    if (epos < (int)s.len)
                         mem_cpy_bw(s.p + epos + 1, s.p + epos, s.len - epos);
                     s.p[epos++] = *p;
                     ++s.len;
@@ -538,18 +540,18 @@ static int read_line_from_terminal(
     loop_end:
         chars_consumed = p - term->input_buf;
         term->buffered_chars_cnt -= chars_consumed;
-        if (chars_consumed < term->buffered_chars_cnt)
+        if (chars_consumed < (int)term->buffered_chars_cnt)
             mem_cpy(term->input_buf, p, term->buffered_chars_cnt);
 
         move_cursor_to_pos(prev_epos + 2, 0, term);
         int chars_printed = printf("> ");
-        for (int i = 0; i < MAX(s.len, prev_len); ++i) {
-            putchar(i < s.len ? s.p[i] : ' ');
+        for (int i = 0; i < MAX((int)s.len, prev_len); ++i) {
+            putchar(i < (int)s.len ? s.p[i] : ' ');
             if ((++chars_printed) % term->wsz.ws_col == 0)
                 putchar('\n');
         }
 
-        int curspos = MAX(s.len, prev_len) + 2;
+        int curspos = MAX((int)s.len, prev_len) + 2;
         if (autocompletes.cnt > 0 && !done) {
             move_cursor_to_pos(curspos, s.len + 2, term);
             curspos = s.len + 2;
@@ -623,8 +625,15 @@ typedef enum token_type_tag {
     e_tt_lparen,     // (
     e_tt_rparen,     // )
 
-    e_tt_error = -1
+    e_tt_lexer_error = -128,
+
+    e_tt_parser_error = -256
 } token_type_t;
+
+static b32 tt_is_error(token_type_t tt)
+{
+    return tt < 0;
+}
 
 typedef struct token_tag {
     token_type_t type;
@@ -650,7 +659,7 @@ static inline void lexer_consume(lexer_t *lexer)
 
 static token_t get_next_token(lexer_t *lexer, arena_t *arena)
 {
-    token_t tok = {};
+    token_t tok = {0};
 
     enum {
         e_lst_prefix_separator,
@@ -747,7 +756,7 @@ static token_t get_next_token(lexer_t *lexer, arena_t *arena)
     }
 
     if (in_quotes || screen_next) {
-        tok.type = e_tt_error;
+        tok.type = e_tt_lexer_error;
         return tok;
     }
 
@@ -766,26 +775,26 @@ static token_t get_next_token(lexer_t *lexer, arena_t *arena)
 
 static inline b32 tok_is_valid(token_t tok)
 {
-    return tok.type != e_tt_uninit && tok.type != e_tt_error;
+    return tok.type != e_tt_uninit && !tt_is_error(tok.type);
 }
 
 static inline b32 tok_is_end_of_shell(token_t tok)
 {
-    return tok.type == e_tt_eol || tok.type == e_tt_rparen ||
+    return (tok.type == e_tt_eol) | (tok.type == e_tt_rparen) |
            !tok_is_valid(tok);
 }
 
 static inline b32 tok_is_cmd_elem_or_lparen(token_t tok)
 {
     return
-        tok.type == e_tt_ident || tok.type == e_tt_in ||
-        tok.type == e_tt_out || tok.type == e_tt_append ||
-        tok.type == e_tt_lparen;
+        (tok.type == e_tt_ident) | (tok.type == e_tt_in) |
+        (tok.type == e_tt_out) | (tok.type == e_tt_append) |
+        (tok.type == e_tt_lparen);
 }
 
 static inline b32 tok_is_cond_sep(token_t tok)
 {
-    return tok.type == e_tt_and || tok.type == e_tt_or;
+    return (tok.type == e_tt_and) | (tok.type == e_tt_or);
 }
 
 struct uncond_chain_node_tag;
@@ -1012,7 +1021,7 @@ static token_t parse_runnable(
     string_t *out_stdout_append_redir,
     arena_t *arena)
 {
-    token_t tok = {};
+    token_t tok = {0};
 
     enum {
         e_st_init,
@@ -1026,35 +1035,35 @@ static token_t parse_runnable(
     while (tok_is_cmd_elem_or_lparen(tok = get_next_token(lexer, arena))) {
         if (tok.type == e_tt_in) {
             if (state == e_st_init) {
-                tok.type = e_tt_error; // @TODO: elaborate
+                tok.type = e_tt_parser_error; // @TODO: elaborate
                 break; 
             }
             if (string_is_valid(out_stdin_redir)) {
-                tok.type = e_tt_error; // @TODO: elaborate
+                tok.type = e_tt_parser_error; // @TODO: elaborate
                 break; 
             }
 
             token_t next = get_next_token(lexer, arena);
             if (next.type != e_tt_ident) { // @TODO: elaborate
-                tok.type = e_tt_error;
+                tok.type = e_tt_parser_error;
                 break;
             } 
             *out_stdin_redir = next.id;
         } else if (tok.type == e_tt_out || tok.type == e_tt_append) {
             if (state == e_st_init) {
-                tok.type = e_tt_error; // @TODO: elaborate
+                tok.type = e_tt_parser_error; // @TODO: elaborate
                 break; 
             }
             if (string_is_valid(out_stdout_redir) ||
                 string_is_valid(out_stdout_append_redir))
             { // @TODO: elaborate
-                tok.type = e_tt_error;
+                tok.type = e_tt_parser_error;
                 break; 
             }
 
             token_t next = get_next_token(lexer, arena);
             if (next.type != e_tt_ident) { // @TODO: elaborate
-                tok.type = e_tt_error;
+                tok.type = e_tt_parser_error;
                 break;
             } 
 
@@ -1064,7 +1073,7 @@ static token_t parse_runnable(
                 *out_stdout_append_redir = next.id;
         } else if (tok.type == e_tt_ident) {
             if (state == e_st_parsed_subshell) {
-                tok.type = e_tt_error; // @TODO: elaborate
+                tok.type = e_tt_parser_error; // @TODO: elaborate
                 break; 
             }
 
@@ -1088,18 +1097,19 @@ static token_t parse_runnable(
                 ++out_runnable->cmd->arg_cnt;
             } break;
             default: 
+                break;
             }
         } else {
             ASSERT(tok.type == e_tt_lparen);
             if (state != e_st_init) {
-                tok.type = e_tt_error; // @TODO: elaborate
+                tok.type = e_tt_parser_error; // @TODO: elaborate
                 break; 
             }
 
             out_runnable->subshell = ARENA_ALLOC(arena, uncond_chain_node_t);
             tok = parse_uncond_chain(lexer, out_runnable->subshell, arena);
             if (tok.type != e_tt_rparen) {
-                tok.type = e_tt_error; // @TODO: elaborate
+                tok.type = e_tt_parser_error; // @TODO: elaborate
                 break; 
             }
 
@@ -1109,9 +1119,9 @@ static token_t parse_runnable(
     }
 
     if (state == e_st_init) // @TODO: elaborate
-        tok.type = e_tt_error;
+        tok.type = e_tt_parser_error;
     else if (tok.type == e_tt_rparen) // @TODO: elaborate
-        tok.type = e_tt_error;
+        tok.type = e_tt_parser_error;
 
     return tok;
 }
@@ -1126,10 +1136,10 @@ static token_t parse_pipe_chain(
 
     CLEAR(out_pipe_chain);    
 
-    runnable_node_t runnable = {};
+    runnable_node_t runnable = {0};
     pipe_node_t *last_elem = NULL;
 
-    token_t sep = {};
+    token_t sep = {0};
 
     do {
         sep = parse_runnable(
@@ -1139,7 +1149,7 @@ static token_t parse_pipe_chain(
             &out_pipe_chain->stdout_append_redir,
             arena);
 
-        if (sep.type == e_tt_error)
+        if (sep.type == e_tt_parser_error)
             break;
 
         switch (state) {
@@ -1162,14 +1172,14 @@ static token_t parse_pipe_chain(
     } while (sep.type == e_tt_pipe);
 
     if (state == e_st_init) // @TODO: elaborate
-        sep.type = e_tt_error;
+        sep.type = e_tt_parser_error;
 
-    if (sep.type != e_tt_error) {
+    if (sep.type != e_tt_parser_error) {
         int pipe_cd_res = check_if_pipe_is_cd(out_pipe_chain);
         if (pipe_cd_res == c_is_cd) 
             out_pipe_chain->is_cd = true;
         if (pipe_cd_res == c_invalid_cd) // @TODO: elaborate
-            sep.type = e_tt_error;
+            sep.type = e_tt_parser_error;
     }
 
     return sep;
@@ -1185,17 +1195,17 @@ static token_t parse_cond_chain(
         e_st_parsing_chain,
     } state = e_st_init;
 
-    pipe_chain_node_t pp = {};
+    pipe_chain_node_t pp = {0};
     cond_node_t *last_cond = NULL;
 
-    token_t sep = {};
+    token_t sep = {0};
 
     do {
         cond_link_t const link =
             sep.type == e_tt_and ? e_cl_if_success : e_cl_if_failed;
 
         sep = parse_pipe_chain(lexer, &pp, arena);
-        if (sep.type == e_tt_error)
+        if (sep.type == e_tt_parser_error)
             break;
 
         switch (state) {
@@ -1219,7 +1229,7 @@ static token_t parse_cond_chain(
     } while (tok_is_cond_sep(sep));
 
     if (state == e_st_init) // @TODO: elaborate
-        sep.type = e_tt_error;
+        sep.type = e_tt_parser_error;
 
     return sep;
 }
@@ -1234,17 +1244,17 @@ static token_t parse_uncond_chain(
         e_st_parsing_chain,
     } state = e_st_init;
 
-    cond_chain_node_t cond = {};
+    cond_chain_node_t cond = {0};
     uncond_node_t *last_uncond = NULL;
 
-    token_t sep = {};
+    token_t sep = {0};
 
     do {
         uncond_link_t const link =
             sep.type == e_tt_background ? e_ul_bg : e_ul_wait;
 
         sep = parse_cond_chain(lexer, &cond, arena);
-        if (sep.type == e_tt_error)
+        if (sep.type == e_tt_parser_error)
             break;
 
         switch (state) {
@@ -1277,11 +1287,9 @@ static root_node_t *parse_line(string_t line, arena_t *arena)
     uncond_chain_node_t *node = ARENA_ALLOC(arena, uncond_chain_node_t);
     token_t sep = parse_uncond_chain(&lexer, node, arena);
 
-    if (sep.type == e_tt_error) {
-        fprintf(
-            stderr,
-            "Parser or lexer error: [unspecified error] (at char %lu)\n",
-            lexer.pos);
+    if (tt_is_error(sep.type)) {
+        fprintf(stderr, "%s error: [unspecified error] (at char %lu)\n",
+            sep.type == e_tt_lexer_error ? "Lexer" : "Parser", lexer.pos);
         return NULL;
     }
 
@@ -1292,8 +1300,9 @@ static root_node_t *parse_line(string_t line, arena_t *arena)
 
 typedef int fd_pair_t[2]; 
 
-void sigchld_handler(int)
+void sigchld_handler(int sig)
 {
+    (void)sig;
     signal(SIGCHLD, sigchld_handler);
     while (wait4(-1, NULL, WNOHANG, NULL) > 0)
         ;
@@ -1412,7 +1421,7 @@ static int execute_pipe_in_subprocess(
     }
 
     for (int i = 0; i < elem_cnt - 1; ++i) {
-        fd_pair_t fds = {};
+        fd_pair_t fds = {0};
         int res = pipe(fds);
         if (res != 0) {
             close_fd_pairs(io_fd_pairs, elem_cnt);
@@ -1575,19 +1584,19 @@ int main(int argc, char **argv)
     arena_t persistent_arena = {{
         memory.p,
         c_persistent_mem_size
-    }};
+    }, 0};
     arena_t line_arena = {{
         memory.p + c_persistent_mem_size,
         c_line_mem_size
-    }};
+    }, 0};
     arena_t temp_arena = {{
         memory.p + c_persistent_mem_size + c_line_mem_size,
         c_temp_mem_size
-    }};
+    }, 0};
 
     b32 const is_term =
         isatty(STDIN_FILENO) && isatty(STDOUT_FILENO) && !disable_term;
-    terminal_session_t term = {};
+    terminal_session_t term = {0};
 
     if (is_term) {
         term.persmem = &persistent_arena;
@@ -1604,7 +1613,7 @@ int main(int argc, char **argv)
             ARENA_ALLOC_N(&line_arena, char, c_line_buf_size),
             c_line_buf_size
         };
-        string_t line = {};
+        string_t line = {0};
 
         if (is_term)
             read_res = read_line_from_terminal(&line_storage, &line, &term);
