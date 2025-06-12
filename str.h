@@ -9,7 +9,7 @@
 
 STATIC_ASSERT(sizeof(char) == sizeof(u8));
 
-typedef struct string_tag {
+typedef struct string {
     char *p;
     u64 len;
 } string_t;

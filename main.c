@@ -62,7 +62,7 @@ static inline void mem_cpy_bw(void *to, void *from, u64 sz)
 
 #define CLEAR(addr_) mem_clear((addr_), sizeof(*(addr_)))
 
-typedef struct arena_tag {
+typedef struct arena {
     buffer_t buf;
     u64 allocated;
 } arena_t;
@@ -136,7 +136,7 @@ static string_t get_token_postfix(string_t s, b32 *is_first)
     return pf;
 }
 
-typedef struct split_path_tag {
+typedef struct split_path {
     string_t dir;
     string_t file;
 } split_path_t;
@@ -163,7 +163,7 @@ static b32 path_has_dir(split_path_t const *path)
     return !string_is_empty(&path->dir);
 }
 
-typedef struct fslist_tag {
+typedef struct fslist {
     string_t *entries;
     u32 cnt;
 } fslist_t;
@@ -188,7 +188,7 @@ static b32 fslist_elem_is_not_eq(string_t elem, void *user)
     return !str_eq(elem, *needle);
 }
 
-typedef struct search_autocomplete_in_dir_args_tag {
+typedef struct search_autocomplete_in_dir_args {
     string_t prefix;
     fslist_t *out;
     arena_t *arena;
@@ -242,7 +242,7 @@ static fslist_t search_autocomplete(
     return res;
 }
 
-typedef struct terminal_session_tag {
+typedef struct terminal_session {
     struct termios backup_ts;
     struct winsize wsz; // @NOTE: does not support resize while editing one line
 
@@ -334,7 +334,7 @@ static void move_cursor_to_pos(int from, int to, terminal_session_t const *term)
     }
 }
 
-typedef struct print_autocomplete_opt_args_tag {
+typedef struct print_autocomplete_opt_args {
     int *pos;
     terminal_session_t const *term;
     int max_rows;
@@ -608,7 +608,7 @@ static int read_line_from_regular_stdin(buffer_t *buf, string_t *out_string)
     return c_rl_ok;
 }
 
-typedef enum token_type_tag {
+typedef enum token_type {
     e_tt_uninit = 0,
 
     e_tt_eol,        // last token
@@ -629,12 +629,12 @@ typedef enum token_type_tag {
     e_tt_parser_error = -256
 } token_type_t;
 
-typedef struct token_tag {
+typedef struct token {
     token_type_t type;
     string_t id;
 } token_t;
 
-typedef struct lexer_tag {
+typedef struct lexer {
     string_t line;
     u64 pos;
 } lexer_t;
@@ -796,38 +796,38 @@ static inline b32 tok_is_cond_sep(token_t tok)
     return (tok.type == e_tt_and) | (tok.type == e_tt_or);
 }
 
-struct uncond_chain_node_tag;
+struct uncond_chain_node;
 
-typedef struct arg_node_tag {
+typedef struct arg_node {
     string_t name;
-    struct arg_node_tag *next;
+    struct arg_node *next;
 } arg_node_t;
 
-typedef struct command_node_tag {
+typedef struct command_node {
     string_t cmd;
     arg_node_t *args;    
     u64 arg_cnt;
 } command_node_t;
 
-typedef enum runnable_type_tag {
+typedef enum runnable_type {
     e_rnt_cmd,
     e_rnt_subshell,
 } runnable_type_t;
 
-typedef struct runnable_node_tag {
+typedef struct runnable_node {
     runnable_type_t type;
     union {
         command_node_t *cmd;
-        struct uncond_chain_node_tag *subshell;
+        struct uncond_chain_node *subshell;
     };
 } runnable_node_t;
 
-typedef struct pipe_node_tag {
+typedef struct pipe_node {
     runnable_node_t runnable;
-    struct pipe_node_tag *next;
+    struct pipe_node *next;
 } pipe_node_t;
 
-typedef struct pipe_chain_node_tag {
+typedef struct pipe_chain_node {
     pipe_node_t *chain;
     u64 cmd_cnt;
 
@@ -838,36 +838,36 @@ typedef struct pipe_chain_node_tag {
     b32 is_cd;
 } pipe_chain_node_t;
 
-typedef enum cond_link_tag {
+typedef enum cond_link {
     e_cl_end,
     e_cl_if_success,
     e_cl_if_failed
 } cond_link_t;
 
-typedef struct cond_node_tag {
+typedef struct cond_node {
     pipe_chain_node_t pp;
     cond_link_t link;
-    struct cond_node_tag *next;
+    struct cond_node *next;
 } cond_node_t;
 
-typedef struct cond_chain_node_tag {
+typedef struct cond_chain_node {
     cond_node_t *chain;
     u64 cond_cnt;
 } cond_chain_node_t;
 
-typedef enum uncond_link_tag {
+typedef enum uncond_link {
     e_ul_end,
     e_ul_bg,
     e_ul_wait
 } uncond_link_t;
 
-typedef struct uncond_node_tag {
+typedef struct uncond_node {
     cond_chain_node_t cond;
     uncond_link_t link;
-    struct uncond_node_tag *next;
+    struct uncond_node *next;
 } uncond_node_t;
 
-typedef struct uncond_chain_node_tag {
+typedef struct uncond_chain_node {
     uncond_node_t *chain;
     u64 uncond_cnt;
 } uncond_chain_node_t;

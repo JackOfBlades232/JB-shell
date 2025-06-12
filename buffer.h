@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-typedef struct buffer_tag {
+typedef struct buffer {
     char *p;
     u64 sz;
 } buffer_t;
