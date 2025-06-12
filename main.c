@@ -44,7 +44,6 @@ STATIC_ASSERT(c_line_buf_size * c_history_entry_cnt < c_persistent_mem_size);
 // Error reporting in the parser
 // Better error reporting in interpreter
 // Tighten assertions
-// ^L
 // Suggest local directories in first word autocomplete:w
 
 
@@ -463,6 +462,7 @@ static int read_line_from_terminal(
         char *p;
         int chars_consumed;
         int prev_epos = epos;
+        b32 clrscr = false;
 
         fslist_t autocompletes = {0};
 
@@ -543,6 +543,9 @@ static int read_line_from_terminal(
             case 4:
                 res = c_rl_eof;
                 goto func_end;
+            case 12:
+                clrscr = true;
+                break;
             case '\n': 
                 ++p;
                 done = true;
@@ -624,6 +627,12 @@ static int read_line_from_terminal(
         term->buffered_chars_cnt -= chars_consumed;
         if (chars_consumed < (int)term->buffered_chars_cnt)
             mem_cpy(term->input_buf, p, term->buffered_chars_cnt);
+
+        if (clrscr) {
+            for (int i = 0; i < term->wsz.ws_row; ++i)
+                putchar('\n');
+            prev_epos = -2;
+        }
 
         move_cursor_to_pos(prev_epos + 2, 0, term);
         int chars_printed = printf("> ");
