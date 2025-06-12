@@ -18,6 +18,19 @@
 #include <stdalign.h>
 #include <stdio.h>
 
+enum {
+    c_program_mem_size = 1024 * 1024,
+
+    c_persistent_mem_size = c_program_mem_size / 4,
+    c_line_mem_size = c_program_mem_size / 2,
+    c_temp_mem_size = c_program_mem_size / 4,
+
+    c_line_buf_size = 1024,
+    c_history_entry_cnt = 64
+};
+
+STATIC_ASSERT(c_line_buf_size * c_history_entry_cnt < c_persistent_mem_size);
+
 #define MIN(a_, b_) ((a_) < (b_) ? (a_) : (b_))
 #define MAX(a_, b_) ((a_) > (b_) ? (a_) : (b_))
 #define ALIGN_UP(n_, align_) ((((n_) - 1) / (align_) + 1) * (align_))
@@ -33,7 +46,6 @@
 // Tighten assertions
 // ^L
 // Suggest local directories in first word autocomplete:w
-// Command history (const depth)
 
 
 static inline void mem_clear(void *mem, u64 sz)
@@ -242,6 +254,10 @@ static fslist_t search_autocomplete(
     return res;
 }
 
+typedef struct history_entry {
+    char buf[c_line_buf_size];
+} history_entry_t;
+
 typedef struct terminal_session {
     struct termios backup_ts;
     struct winsize wsz; // @NOTE: does not support resize while editing one line
@@ -250,6 +266,11 @@ typedef struct terminal_session {
     u32 buffered_chars_cnt;
 
     fslist_t path;
+
+    history_entry_t *history;
+    u32 history_head;
+    u32 history_filled_entries;
+    u32 history_current;
 
     arena_t *tmpmem;
     arena_t *persmem;
@@ -275,6 +296,14 @@ static void init_term(terminal_session_t *term)
                 ++path;
         }
     }
+
+    term->history =
+        ARENA_ALLOC_N(term->persmem, history_entry_t, c_history_entry_cnt);
+    mem_clear(term->history, c_history_entry_cnt * sizeof(*term->history));
+
+    term->history_head = 0;
+    term->history_filled_entries = 0;
+    term->history_current = 0;
 }
 
 static void shutdown_term(terminal_session_t *term, b32 drain)
@@ -288,6 +317,27 @@ static void shutdown_term(terminal_session_t *term, b32 drain)
     }
 
     tcsetattr(STDIN_FILENO, TCSANOW, &term->backup_ts);
+}
+
+static void history_push(terminal_session_t *term, string_t line)
+{
+    ASSERT(line.len < c_line_buf_size);
+
+    mem_cpy(
+        term->history[term->history_head % c_history_entry_cnt].buf,
+        line.p, line.len);
+    term->history[term->history_head % c_history_entry_cnt]
+        .buf[line.len] = '\0';
+
+    ++term->history_head;
+    term->history_current = term->history_head;
+    // -1 to leave space for the empty line dest
+    if (term->history_filled_entries < c_history_entry_cnt - 1)
+        ++term->history_filled_entries;
+
+    mem_clear(
+        &term->history[term->history_head % c_history_entry_cnt],
+        sizeof(*term->history));
 }
 
 static void start_terminal_editing(terminal_session_t *term)
@@ -431,6 +481,39 @@ static int read_line_from_terminal(
         {
             if (state == e_st_ready_for_arrow) {
                 switch (*p) {
+                case 65:
+                    if (term->history_head - term->history_current <
+                        term->history_filled_entries)
+                    {
+                        --term->history_current;
+                        int const id =
+                            term->history_current % c_history_entry_cnt; 
+                        epos = s.len = 0;
+                        for (char const *from = term->history[id].buf;
+                            *from; ++from)
+                        {
+                            s.p[epos++] = *from;
+                            ++s.len;
+                        }
+                        ASSERT(s.len < buf->sz);
+                    }
+                    continue;
+                case 66:
+                    if (term->history_current < term->history_head)
+                    {
+                        ++term->history_current;
+                        int const id =
+                            term->history_current % c_history_entry_cnt; 
+                        epos = s.len = 0;
+                        for (char const *from = term->history[id].buf;
+                            *from; ++from)
+                        {
+                            s.p[epos++] = *from;
+                            ++s.len;
+                        }
+                        ASSERT(s.len < buf->sz);
+                    }
+                    continue;
                 case 67:
                     if (epos < (int)s.len)
                         ++epos;
@@ -1530,16 +1613,6 @@ static int execute_line(root_node_t const *ast, b32 is_term, arena_t *arena)
 
 int main(int argc, char **argv)
 {
-    enum {
-        c_program_mem_size = 1024 * 1024,
-
-        c_persistent_mem_size = c_program_mem_size / 4,
-        c_line_mem_size = c_program_mem_size / 2,
-        c_temp_mem_size = c_program_mem_size / 4,
-
-        c_line_buf_size = 1024
-    };
-
     b32 execute = true;
     b32 print_ast = false;
     b32 disable_term = false;
@@ -1617,6 +1690,9 @@ int main(int argc, char **argv)
             break;
         else if (line.len == 0)
             goto loop_end;
+
+        if (is_term)
+            history_push(&term, line);
 
         root_node_t *ast_root = parse_line(line, &line_arena);
         if (!ast_root)
