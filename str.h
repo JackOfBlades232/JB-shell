@@ -1,4 +1,4 @@
-/* Toy-Shell/src/str.h */
+/* JB-shell/src/str.h */
 #ifndef STR_SENTRY
 #define STR_SENTRY
 

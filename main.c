@@ -1,4 +1,4 @@
-/* Toy-Shell/main.c */
+/* JB-shell/main.c */
 #include "def.h"
 #include "buffer.h"
 #include "str.h"
@@ -40,11 +40,13 @@ STATIC_ASSERT(c_line_buf_size * c_history_entry_cnt < c_persistent_mem_size);
 
 // @TODO(total):
 // Fix crash on ^C to telnet -- I think telnet should not react at all
+//  Caught same crash in gdb -- seems like ^C if ignored by child kills my shell
 // Make a file with test commands
+// Fix autocomplete in absolute pathes
 // Error reporting in the parser
 // Better error reporting in interpreter
 // Tighten assertions
-// Suggest local directories in first word autocomplete:w
+// Suggest local directories in first word autocomplete
 
 
 static inline void mem_clear(void *mem, u64 sz)

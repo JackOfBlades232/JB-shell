@@ -1,4 +1,4 @@
-/* Toy-Shell/src/def.h */
+/* JB-shell/src/def.h */
 #ifndef DEF_SENTRY
 #define DEF_SENTRY
 
