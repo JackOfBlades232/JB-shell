@@ -1,2 +1,2 @@
-# Toy-Shell
-An imitation of a terminal shell for linux in C
+# JB-shell
+A simple shell for me to work and train posix & c with
