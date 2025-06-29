@@ -41,6 +41,7 @@ STATIC_ASSERT(c_line_buf_size * c_history_entry_cnt < c_persistent_mem_size);
 // @TODO(total):
 // Fix crash on ^C to telnet -- I think telnet should not react at all
 //  Caught same crash in gdb -- seems like ^C if ignored by child kills my shell
+// Fix: some control keys (arrows) break after launching zsh from this shell
 // Make a file with test commands
 // Fix autocomplete in absolute pathes
 // Error reporting in the parser
